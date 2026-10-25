@@ -69,6 +69,11 @@
   .arena { width: 100%; height: 150px; display: block; border-radius: 10px; background: #12161d; }
   .tscore { font-size: clamp(2.6rem, 8vw, 4rem); font-weight: 800; text-align: center; font-variant-numeric: tabular-nums; line-height: 1.15; margin-top: 4px; }
   .tsub { text-align: center; color: var(--muted); font-size: .85rem; min-height: 1.3em; }
+  /* phone dim mode: almost-black, still awake */
+  #pDimBox { position: fixed; inset: 0; z-index: 99; background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: #2b2b2b; user-select: none; -webkit-user-select: none; touch-action: none; }
+  #pDimDot { width: 12px; height: 12px; border-radius: 50%; background: #0a3d1c; }
+  #pDimTxt { font-size: 1.1rem; font-weight: 700; } #pDimHint { font-size: .75rem; }
+  .ts.zz { color: var(--bad); font-weight: 700; } .pst.zz { color: var(--bad); font-weight: 700; }
   /* tournament */
   #tbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-weight: 700; border-color: #ffd166; background: linear-gradient(90deg, #3b3216, var(--card)); }
   #tbar button { padding: 6px 12px; }
@@ -224,12 +229,18 @@
       <div class="cap">Force now (1 g = resting)</div>
       <div><b id="pGauge">–</b> g</div>
     </div>
+    <div class="card" style="margin-top:12px">
+      <button id="pDim" class="alt" style="width:100%">🌙 Dim screen</button>
+      <label class="chk" style="margin-top:10px"><input type="checkbox" id="pAuto" checked> Dim automatically 20 s after starting</label>
+      <div class="muted" style="margin-top:6px">Dim mode blacks out the screen to save battery, but keeps it on so the sensors keep working. To wake it, press and hold the screen for 2 seconds. If the screen turns fully off, the game stops hearing from this phone.</div>
+    </div>
   </div>
 </div>
+<div id="pDimBox" class="hidden"><div id="pDimDot"></div><div id="pDimTxt"></div><div id="pDimHint">press and hold to wake</div></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-<script src="games.js?v=5"></script>
-<script src="app.js?v=5"></script>
+<script src="games.js?v=6"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>

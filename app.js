@@ -88,7 +88,7 @@
       const now = performance.now();
       if (this.pend && now - this.pend.t0 >= 40) this.commit();
       if (now - this.lastFrame >= 50) {
-        const f = { t: 'f', dt: Math.round(now - this.lastFrame), gx: +this.gmax.toFixed(2), gn: +Math.min(this.gmin, 9).toFixed(2), b: +this.b.toFixed(1), c: +this.c.toFixed(1), rot: +this.rot.toFixed(1), wob: +this.wob.toFixed(3), air: this.airN >= 3 && !!this.airStart,
+        const f = { t: 'f', dt: Math.round(now - this.lastFrame), gx: +this.gmax.toFixed(2), gn: +Math.min(this.gmin, 9).toFixed(2), b: +this.b.toFixed(1), c: +this.c.toFixed(1), rot: +this.rot.toFixed(1), wob: +this.wob.toFixed(3), air: this.airN >= 3 && !!this.airStart, v: document.visibilityState === 'visible' ? 1 : 0,
           ax: +this.ax.toFixed(2), ay: +this.ay.toFixed(2), az: +this.az.toFixed(2), lx: +this.lx.toFixed(2), ly: +this.ly.toFixed(2), lz: +this.lz.toFixed(2),
           ra: Math.round(this.rr[0]), rb: Math.round(this.rr[1]), rg: Math.round(this.rr[2]), al: Math.round(this.al) };
         this.lastFrame = now; this.gmax = this.g; this.gmin = this.g;
@@ -102,8 +102,29 @@
     let devId = params.get('dev') || lsGet('mgDev');
     if (!devId) { devId = Math.random().toString(36).slice(2, 10); lsSet('mgDev', devId); }
     let peer, conn, retry = false;
-    const setConn = (txt, ok) => { $('pConn').textContent = txt; $('pConn').style.color = ok ? 'var(--good)' : 'var(--accent)'; };
+    const setConn = (txt, ok) => {
+      $('pConn').textContent = txt; $('pConn').style.color = ok ? 'var(--good)' : 'var(--accent)';
+      $('pDimDot').style.background = ok ? '#0a3d1c' : '#4a3500';          // faint status light in dim mode
+    };
     const sensor = new Sensor(m => { if (conn && conn.open) conn.send(m); });
+
+    /* dim mode: the screen stays on (so sensors keep running) but goes black */
+    let holdT = null, autoT = null;
+    function dim(on) {
+      $('pDimBox').classList.toggle('hidden', !on);
+      try {
+        if (on && document.documentElement.requestFullscreen) { const p = document.documentElement.requestFullscreen(); if (p && p.catch) p.catch(() => {}); }
+        else if (!on && document.fullscreenElement) { const p = document.exitFullscreen(); if (p && p.catch) p.catch(() => {}); }
+      } catch (_) {}
+    }
+    $('pDim').onclick = () => dim(true);
+    $('pAuto').checked = lsGet('mgAutoDim') !== '0';
+    $('pAuto').onchange = () => { lsSet('mgAutoDim', $('pAuto').checked ? '1' : '0'); if (!$('pAuto').checked) clearTimeout(autoT); };
+    const box = $('pDimBox');
+    box.addEventListener('pointerdown', () => { clearTimeout(holdT); holdT = setTimeout(() => dim(false), 2000); });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => box.addEventListener(ev, () => clearTimeout(holdT)));
+    // tell the host straight away if the screen is about to switch off
+    document.addEventListener('visibilitychange', () => { if (conn && conn.open) conn.send({ t: 'vis', v: document.visibilityState === 'visible' ? 1 : 0 }); });
 
     function onData(m) {
       if (m.t === 'cfg') Object.assign(sensor.cfg, m.cfg);
@@ -111,7 +132,7 @@
         $('pGame').textContent = m.id ? `${m.emoji} ${m.title}` : '🏠 Waiting for a game';
         document.documentElement.style.setProperty('--ga', m.accent || '#ffb547');
       } else if (m.t === 'ph') {
-        $('pTeam').textContent = m.name; $('pTeam').style.color = m.color;
+        $('pTeam').textContent = m.name; $('pTeam').style.color = m.color; $('pDimTxt').textContent = m.name;
         $('pBig').textContent = m.big ?? ''; $('pSub').textContent = m.sub || '';
         $('pBig').classList.toggle('long', String(m.big ?? '').length > 6);
         $('pMeter').classList.toggle('hidden', m.meter == null);
@@ -131,6 +152,7 @@
       $('pMsg').className = 'muted'; $('pMsg').textContent = 'Starting…';
       try { await sensor.start(); } catch (e) { $('pMsg').className = 'err'; $('pMsg').textContent = e.message; return; }
       $('pStartCard').classList.add('hidden'); $('pLive').classList.remove('hidden');
+      if ($('pAuto').checked) autoT = setTimeout(() => { if ($('pAuto').checked) dim(true); }, 20000);
       peer = new Peer();
       peer.on('open', connect);
       peer.on('disconnected', () => peer.reconnect());
@@ -229,15 +251,15 @@
     $('phones').innerHTML = H.teams.length ? '' : '<div class="muted">No phones yet — scan the QR code.</div>';
     H.teams.forEach(t => {
       const row = document.createElement('div'); row.className = 'prow';
-      row.innerHTML = `<span class="dot" style="background:${t.color}"></span><input maxlength="20" aria-label="Team name"><span class="pst ${t.online ? 'on' : ''}">${t.online ? '● online' : '○ offline'}</span>${t.online ? '' : '<button class="x" title="Remove">×</button>'}`;
+      row.innerHTML = `<span class="dot" style="background:${t.color}"></span><input maxlength="20" aria-label="Team name"><span class="pst ${t.asleep ? 'zz' : t.online ? 'on' : ''}">${t.asleep ? '😴 asleep' : t.online ? '● online' : '○ offline'}</span>${t.online ? '' : '<button class="x" title="Remove">×</button>'}`;
       const inp = row.querySelector('input'); inp.value = t.name;
       inp.oninput = () => { t.name = inp.value; saveNames(); t.lastPh = ''; };
       const x = row.querySelector('.x');
       if (x) x.onclick = () => { H.teams.splice(H.teams.indexOf(t), 1); if (t.card) t.card.remove(); saveNames(); renderPhones(); };
       $('phones').appendChild(row);
     });
-    const n = H.teams.filter(t => t.online).length;
-    $('conn').textContent = n ? `${n} phone${n === 1 ? '' : 's'} connected ✓` : 'Waiting for phones…';
+    const n = H.teams.filter(t => t.online).length, z = H.teams.filter(t => t.asleep).length;
+    $('conn').textContent = n ? `${n} phone${n === 1 ? '' : 's'} connected ✓${z ? ` · ${z} asleep 😴` : ''}` : 'Waiting for phones…';
     if ($('startBtn')) $('startBtn').disabled = !H.teams.length;
   }
 
@@ -368,14 +390,15 @@
     if (m.t === 'hello') {
       const t = addTeam(m.id);
       if (t.conn && t.conn !== c && t.conn.open) t.conn.close();
-      t.conn = c; t.online = true; ref.t = t; t.lr = null; t.lw = null;
+      t.conn = c; t.online = true; ref.t = t; t.lr = null; t.lw = null; t.lastFrameAt = now; t.hidden = false;
       t.send = x => { if (c.open) c.send(x); };
       sendMode(t); applySens(t); renderPhones(); beep(660, 80);
       return;
     }
     const t = ref.t; if (!t) return;
+    if (m.t === 'vis') { t.hidden = !m.v; if (m.v) t.lastFrameAt = now; return; }      // phone says its screen is going off / back on
     if (m.t === 'f') {
-      t.f = m;
+      t.f = m; t.lastFrameAt = now; t.hidden = m.v === 0;
       const d = { rot: t.lr == null ? 0 : Math.max(0, m.rot - t.lr), wob: t.lw == null ? 0 : Math.max(0, m.wob - t.lw) };
       t.lr = m.rot; t.lw = m.wob;
       if (g && g.onFrame) g.onFrame(t, m, d, m.dt || 50, now);
@@ -407,8 +430,23 @@
     const now = performance.now();
     H.teams.forEach(t => { if (t.card) drawTeam(t, now); });
   }
+  // a phone whose screen turned off stops sending sensor data — spot it quickly and say so
+  function checkSleep(now) {
+    let changed = false;
+    H.teams.forEach(t => {
+      const was = !!t.asleep;
+      t.asleep = !!(t.online && (t.hidden || (t.lastFrameAt && now - t.lastFrameAt > 2500)));
+      if (t.asleep === was) return;
+      changed = true;
+      if (t.asleep) { beep(200, 400, .2, 'square'); if (H.game) H.log(t, '😴 went to sleep — wake it up!'); }
+      else if (t.online && H.game) H.log(t, '👋 is awake again');
+    });
+    if (changed) renderPhones();
+  }
+  const asleepWarn = () => { const s = H.teams.filter(t => t.asleep).map(t => t.name); return s.length ? `😴 ${s.join(' & ')} ${s.length === 1 ? 'is' : 'are'} asleep — wake ${s.length === 1 ? 'that phone' : 'those phones'} before the next game!` : ''; };
   function logic() {                                        // runs on a timer so a hidden tab keeps the clock honest
     const g = H.game, now = performance.now();
+    checkSleep(now);
     if (!g) { tourTick(now); viewTick(now); return; }
     if (H.st === 'running' && now >= H.endAt) finish(true);
     g.tick && g.tick(now);
@@ -428,8 +466,8 @@
     H.teams.forEach(t => {
       if (!t.card) return;
       t.card.querySelector('.tn').textContent = t.name; t.card.querySelector('.tn').style.color = t.color;
-      const st = t.card.querySelector('.ts'); st.textContent = t.online ? '● online' : '○ offline'; st.className = 'ts' + (t.online ? ' on' : '');
-      t.card.classList.toggle('off', !t.online);
+      const st = t.card.querySelector('.ts'); st.textContent = t.asleep ? '😴 asleep — wake the phone' : t.online ? '● online' : '○ offline'; st.className = 'ts' + (t.asleep ? ' zz' : t.online ? ' on' : '');
+      t.card.classList.toggle('off', !t.online || t.asleep);
       t.card.querySelector('.tscore').textContent = g.scoreText(t);
       t.card.querySelector('.tsub').textContent = g.sub ? g.sub(t) : '';
       g.cardUpdate && g.cardUpdate(t, t.ex);
@@ -498,9 +536,9 @@
     v('vClock').dataset.mood = $('clock').dataset.mood; v('vPill').textContent = $('pill').textContent; v('vPill').className = $('pill').className;
     H.teams.forEach(t => {
       if (!t.vcard) return;
-      t.vcard.querySelector('.vn').textContent = t.name; t.vcard.querySelector('.vs').textContent = g.scoreText(t);
+      t.vcard.querySelector('.vn').textContent = t.name + (t.asleep ? ' 😴' : ''); t.vcard.querySelector('.vs').textContent = g.scoreText(t);
       t.vcard.querySelector('.vsub').textContent = g.sub ? g.sub(t) : '';
-      t.vcard.classList.toggle('off', !t.online); t.vcard.classList.toggle('win', !!(t.card && t.card.classList.contains('win')));
+      t.vcard.classList.toggle('off', !t.online || t.asleep); t.vcard.classList.toggle('win', !!(t.card && t.card.classList.contains('win')));
     });
     if (H.st === 'finished') { if (!view.fin) { view.fin = true; vResults(d, g); } }
     else if (view.fin) { view.fin = false; v('vResults').classList.add('hidden'); }
@@ -695,6 +733,7 @@
       <div class="tbclock"><span class="cap">Starts in</span><div id="tbSecs">0</div></div>
       <div class="tbctl"><button id="tbM" class="alt">−10 s</button><button id="tbP" class="alt">+10 s</button><button id="tbSkip">Start now ▶</button>
         <label>Break length <input type="number" id="tbLen" min="5" max="300" value="${T.breakSecs}"> s</label><button id="tbEnd" class="alt">End tournament</button></div>
+      <div id="tbWarn" class="err" style="text-align:center;font-weight:700"></div>
       ${T.lastBanner ? `<div class="tblast">Last game: <b>${esc(T.lastBanner)}</b></div>` : ''}
       <h3 class="th">Standings</h3><div id="tbBoard">${boardHtml(false)}</div>`;
     H.teams.forEach(t => { t.send && t.send({ t: 'mode', id: 'break', emoji: '⏳', title: `Next: ${g.emoji} ${g.title}`, accent: g.accent }); t.lastPh = ''; });
@@ -748,7 +787,7 @@
       if (T.screen === 'game' && now >= T.holdUntil) showBreakScreen();
       const left = T.breakEnd - now, secs = Math.max(0, Math.ceil(left / 1000));
       if (secs !== T.secShown) { T.secShown = secs; if (secs > 0 && secs <= 5) beep(620, 90); }
-      if (T.screen === 'break') { const el = $('tbSecs'); if (el) el.textContent = secs; phoneTour('break', secs); }
+      if (T.screen === 'break') { const el = $('tbSecs'); if (el) el.textContent = secs; if ($('tbWarn')) $('tbWarn').textContent = asleepWarn(); phoneTour('break', secs); }
       if (left <= 0) startPlay();
       return;
     }
@@ -764,6 +803,7 @@
     return `<div class="bk-top">🏆 Game ${T.next + 1} of ${T.seq.length}${p.plays > 1 ? ` · round ${p.play} of ${p.plays}` : ''}</div>
       <div class="bk-next" style="--ga:${g.accent}"><span class="bk-e">${g.emoji}</span><div><div class="bk-t">Up next: ${esc(g.title)}</div><div class="bk-b">${esc(g.blurb)}</div></div></div>
       <div class="bk-count"><small>starts in</small>${secs}</div>
+      ${asleepWarn() ? `<div class="bk-warn">${esc(asleepWarn())}</div>` : ''}
       <div class="bk-board">${T.lastBanner ? `<div class="bk-last">${esc(T.lastBanner)}</div>` : ''}${boardHtml(false)}</div>`;
   }
   function vFinal(d) {
