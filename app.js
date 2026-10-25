@@ -43,13 +43,15 @@
       this.rot = 0; this.wob = 0; this.b = 0; this.c = 0; this.g = 1; this.gmax = 0; this.gmin = 99;
       this.pend = null; this.rearm = true; this.lastHit = -1e9; this.airStart = 0; this.airN = 0;
       this.lastT = 0; this.lastFrame = performance.now(); this.got = false;
+      this.sgn = /iP(hone|ad|od)/.test(navigator.userAgent) ? -1 : 1;     // iOS reports gravity with the opposite sign
+      this.ax = 0; this.ay = 0; this.az = 9.81; this.gv = null; this.lx = 0; this.ly = 0; this.lz = 0; this.rr = [0, 0, 0]; this.al = 0;
     }
     async start() {
       if (!window.isSecureContext) throw new Error('Sensors need HTTPS.');
       for (const E of [window.DeviceMotionEvent, window.DeviceOrientationEvent])
         if (E && typeof E.requestPermission === 'function' && await E.requestPermission() !== 'granted') throw new Error('Motion permission was denied.');
       addEventListener('devicemotion', e => this.motion(e));
-      addEventListener('deviceorientation', e => { if (e.beta != null) { this.b = e.beta; this.c = e.gamma; } });
+      addEventListener('deviceorientation', e => { if (e.beta != null) { this.b = e.beta; this.c = e.gamma; this.al = e.alpha || 0; } });
       setInterval(() => this.tick(), 20);
       wake();
       await new Promise(r => setTimeout(r, 1500));
@@ -60,7 +62,14 @@
       this.got = true;
       const now = performance.now(), dt = this.lastT ? Math.min(now - this.lastT, 100) / 1000 : .016; this.lastT = now;
       const g = Math.hypot(a.x, a.y, a.z) / G; this.g = g;
-      const r = e.rotationRate; if (r && r.alpha != null) this.rot += Math.hypot(r.alpha, r.beta, r.gamma) * dt;   // degrees
+      const r = e.rotationRate; if (r && r.alpha != null) { this.rot += Math.hypot(r.alpha, r.beta, r.gamma) * dt; this.rr = [r.alpha, r.beta, r.gamma]; }   // degrees
+      this.ax = a.x * this.sgn; this.ay = a.y * this.sgn; this.az = a.z * this.sgn;
+      if (!this.gv) this.gv = { x: this.ax, y: this.ay, z: this.az };
+      const kg = 1 - Math.exp(-dt / .15);                        // slow average = gravity
+      this.gv.x += (this.ax - this.gv.x) * kg; this.gv.y += (this.ay - this.gv.y) * kg; this.gv.z += (this.az - this.gv.z) * kg;
+      const l = e.acceleration;
+      if (l && l.x != null) { this.lx = l.x * this.sgn; this.ly = l.y * this.sgn; this.lz = l.z * this.sgn; }
+      else { this.lx = this.ax - this.gv.x; this.ly = this.ay - this.gv.y; this.lz = this.az - this.gv.z; }
       this.wob += Math.abs(g - 1) * dt;
       if (g > this.gmax) this.gmax = g; if (g < this.gmin) this.gmin = g;
       const c = this.cfg;
@@ -79,7 +88,9 @@
       const now = performance.now();
       if (this.pend && now - this.pend.t0 >= 40) this.commit();
       if (now - this.lastFrame >= 50) {
-        const f = { t: 'f', dt: Math.round(now - this.lastFrame), gx: +this.gmax.toFixed(2), gn: +Math.min(this.gmin, 9).toFixed(2), b: +this.b.toFixed(1), c: +this.c.toFixed(1), rot: +this.rot.toFixed(1), wob: +this.wob.toFixed(3), air: this.airN >= 3 && !!this.airStart };
+        const f = { t: 'f', dt: Math.round(now - this.lastFrame), gx: +this.gmax.toFixed(2), gn: +Math.min(this.gmin, 9).toFixed(2), b: +this.b.toFixed(1), c: +this.c.toFixed(1), rot: +this.rot.toFixed(1), wob: +this.wob.toFixed(3), air: this.airN >= 3 && !!this.airStart,
+          ax: +this.ax.toFixed(2), ay: +this.ay.toFixed(2), az: +this.az.toFixed(2), lx: +this.lx.toFixed(2), ly: +this.ly.toFixed(2), lz: +this.lz.toFixed(2),
+          ra: Math.round(this.rr[0]), rb: Math.round(this.rr[1]), rg: Math.round(this.rr[2]), al: Math.round(this.al) };
         this.lastFrame = now; this.gmax = this.g; this.gmin = this.g;
         this.send(f); $('pGauge').textContent = f.gx.toFixed(1);
       }
@@ -102,6 +113,7 @@
       } else if (m.t === 'ph') {
         $('pTeam').textContent = m.name; $('pTeam').style.color = m.color;
         $('pBig').textContent = m.big ?? ''; $('pSub').textContent = m.sub || '';
+        $('pBig').classList.toggle('long', String(m.big ?? '').length > 6);
         $('pMeter').classList.toggle('hidden', m.meter == null);
         if (m.meter != null) { $('pBar').style.width = (m.meter * 100) + '%'; $('pBar').style.background = `hsl(${m.meter * 120},80%,50%)`; }
         $('pBox').style.background = m.bg || '';
@@ -193,8 +205,7 @@
     $('games').innerHTML = Object.values(GAMES).map(g => `
       <button class="gcard" data-id="${g.id}" style="--ga:${g.accent}">
         <span class="gemoji">${g.emoji}</span><b>${g.title}</b><span>${g.blurb}</span>
-      </button>`).join('') + `
-      <a class="gcard tool" href="sensors.html"><span class="gemoji">📱</span><b>Sensor Viewer</b><span>Live orientation, level, acceleration and rotation on one phone.</span></a>`;
+      </button>`).join('');
     $('games').querySelectorAll('button.gcard').forEach(b => b.onclick = () => openGame(b.dataset.id));
   }
 
@@ -228,7 +239,7 @@
   function buildCard(t) {
     const g = H.game, d = document.createElement('div');
     d.className = 'team'; d.style.setProperty('--tc', t.color);
-    d.innerHTML = `<div class="thead"><span class="tn"></span><span class="ts"></span></div><canvas class="arena"></canvas><div class="tscore">0</div><div class="tsub"></div>${g.sens ? `<div class="sens"><div class="sbar"><i class="sfill"></i><b class="smark"></b></div><div class="srow"><span>${g.sens.label}: <b class="sval"></b></span><span class="slive"></span></div><input type="range" class="ssl" min="${g.sens.min}" max="${g.sens.max}" step="${g.sens.step}"></div>` : ''}<div class="textra">${g.extra ? g.extra(t) : ''}</div>`;
+    d.innerHTML = `<div class="thead"><span class="tn"></span><span class="ts"></span></div><canvas class="arena"></canvas><div class="tscore${g.small ? ' small' : ''}">0</div><div class="tsub"></div>${g.sens ? `<div class="sens"><div class="sbar"><i class="sfill"></i><b class="smark"></b></div><div class="srow"><span>${g.sens.label}: <b class="sval"></b></span><span class="slive"></span></div><input type="range" class="ssl" min="${g.sens.min}" max="${g.sens.max}" step="${g.sens.step}"></div>` : ''}<div class="textra">${g.extra ? g.extra(t) : ''}</div>`;
     t.card = d; t.cv = d.querySelector('canvas'); t.cx = t.cv.getContext('2d'); t.ex = d.querySelector('.textra');
     $('teams').appendChild(d);
     if (g.bind) g.bind(t, t.ex);
@@ -278,7 +289,7 @@
     $('banner').classList.add('hidden');
     $('home').classList.add('hidden'); $('play').classList.remove('hidden');
     $('crumb').textContent = `${g.emoji} ${g.title}`; $('homeLink').classList.remove('hidden');
-    $('howto').textContent = g.how; $('clock').style.setProperty('--ga', g.accent);
+    $('howto').textContent = g.how; $('clock').style.setProperty('--ga', g.accent); $('clock').dataset.free = g.mode === 'free' ? '1' : '';
     document.documentElement.style.setProperty('--ga', g.accent);
     buildSettings(); $('teams').innerHTML = '';
     H.teams.forEach(t => { g.reset(t); buildCard(t); });
@@ -295,7 +306,7 @@
 
   /* ---- run state machine ---- */
   function startGame() {
-    const g = H.game; if (!g || H.st === 'running' || H.st === 'armed' || !H.teams.length) return;
+    const g = H.game; if (!g || g.mode === 'free' || H.st === 'running' || H.st === 'armed' || !H.teams.length) return;
     H.teams.forEach(t => g.reset(t)); feed.length = 0; renderFeed();
     $('banner').classList.add('hidden'); H.teams.forEach(t => t.card.classList.remove('win'));
     H.dur = g.mode === 'timed' ? cfgDur() : 0;
@@ -442,10 +453,11 @@
       v('vTeams').innerHTML = ''; v('vTeams').dataset.n = H.teams.length;
       H.teams.forEach(t => { t.vcard = null; });
       if (g) {
+        v('vClock').classList.toggle('hidden', g.mode === 'free');
         d.documentElement.style.setProperty('--ga', g.accent); v('vTitle').textContent = `${g.emoji} ${g.title}`;
         H.teams.forEach(t => {
           const c = d.createElement('div'); c.className = 'vt'; c.style.setProperty('--tc', t.color);
-          c.innerHTML = '<div class="vn"></div><canvas></canvas><div class="vs"></div><div class="vsub"></div>';
+          c.innerHTML = `<div class="vn"></div><canvas></canvas><div class="vs${g.small ? ' small' : ''}"></div><div class="vsub"></div>`;
           v('vTeams').appendChild(c); t.vcard = c; t.vcv = c.querySelector('canvas'); t.vcx = t.vcv.getContext('2d');
         });
       }

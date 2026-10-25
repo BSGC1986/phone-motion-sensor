@@ -414,5 +414,79 @@
     }
   };
 
+  /* ======================================================================
+     7. SENSOR LAB  (no scoring — a live view of every phone's sensors)
+     ====================================================================== */
+  const posture = g => {
+    const ax = Math.abs(g.x), ay = Math.abs(g.y), az = Math.abs(g.z);
+    if (az >= ax && az >= ay) return g.z > 0 ? 'Face up' : 'Face down';
+    if (ay >= ax) return g.y > 0 ? 'Upright' : 'Upside down';
+    return g.x > 0 ? 'Top to left' : 'Top to right';
+  };
+  const cell = (k, l) => `<div class="c"><span>${l}</span><b data-k="${k}">–</b></div>`;
+  GAMES.sensors = {
+    id: 'sensors', emoji: '📱', title: 'Sensor Lab', accent: '#34d399', mode: 'free', small: true,
+    blurb: 'See what every phone feels: which way up, tilt, shake and spin — live.',
+    how: 'No scoring here — just watch each phone. Tilt it, shake it, spin it. Every phone that scans the QR code appears as its own live card.',
+    settings: [],
+    reset(t) { t.s = { g: { x: 0, y: 0, z: 9.81 }, l: { x: 0, y: 0, z: 0 }, lm: 0, peak: 0, b: 0, c: 0, al: 0, rr: { x: 0, y: 0, z: 0 }, f: 1, init: false }; },
+    onFrame(t, f) {
+      const s = t.s; if (f.ax == null) return;
+      const k = s.init ? .35 : 1; s.init = true;
+      s.g.x += (f.ax - s.g.x) * k; s.g.y += (f.ay - s.g.y) * k; s.g.z += (f.az - s.g.z) * k;
+      s.l.x += (f.lx - s.l.x) * .5; s.l.y += (f.ly - s.l.y) * .5; s.l.z += (f.lz - s.l.z) * .5;
+      s.lm = Math.hypot(s.l.x, s.l.y, s.l.z); if (s.lm > s.peak) s.peak = s.lm;
+      s.b = f.b; s.c = f.c; s.al = f.al; s.rr = { x: f.rb, y: f.rg, z: f.ra }; s.f = f.gx;
+    },
+    score: () => 0, scoreText: t => posture(t.s.g),
+    sub: t => `β ${t.s.b.toFixed(0)}° · γ ${t.s.c.toFixed(0)}° · α ${t.s.al.toFixed(0)}°`,
+    phone: t => ({ big: posture(t.s.g), sub: `Force ${t.s.f.toFixed(1)} g · accel ${t.s.lm.toFixed(1)} m/s²` }),
+    extra: () => `<div class="sdata"><div class="sh">Acceleration, gravity removed (m/s²)</div>${cell('lx', 'X')}${cell('ly', 'Y')}${cell('lz', 'Z')}
+      <div class="sh">Rotation (°/s)</div>${cell('rx', 'X')}${cell('ry', 'Y')}${cell('rz', 'Z')}
+      <div class="sh">Totals</div>${cell('lm', 'Accel')}${cell('pk', 'Peak')}${cell('fg', 'Force g')}</div>
+      <button class="alt rp" style="margin-top:8px;padding:6px">Reset peak</button>`,
+    bind(t, el) { el.querySelector('.rp').onclick = () => { t.s.peak = 0; }; },
+    cardUpdate(t, el) {
+      const s = t.s, v = { lx: s.l.x.toFixed(2), ly: s.l.y.toFixed(2), lz: s.l.z.toFixed(2), rx: s.rr.x, ry: s.rr.y, rz: s.rr.z, lm: s.lm.toFixed(2), pk: s.peak.toFixed(2), fg: s.f.toFixed(2) };
+      el.querySelectorAll('[data-k]').forEach(e => { e.textContent = v[e.dataset.k]; });
+    },
+    draw(t, c, w, h, now, dt) {
+      const s = t.s, mid = h / 2;
+      bg(c, w, h, '#10231f', '#0a1411');
+      // --- spirit level (left): the bubble drifts toward the high side
+      const lx = w * .2, R = Math.min(48, w * .16), gx = clamp(s.g.x / G, -1, 1), gy = clamp(s.g.y / G, -1, 1), flat = Math.hypot(gx, gy) < .06 && s.g.z > 0;
+      c.strokeStyle = '#2f4a42'; c.lineWidth = 2; c.beginPath(); c.arc(lx, mid, R, 0, TAU); c.stroke();
+      c.beginPath(); c.arc(lx, mid, R * .28, 0, TAU); c.stroke();
+      c.beginPath(); c.moveTo(lx - R, mid); c.lineTo(lx + R, mid); c.moveTo(lx, mid - R); c.lineTo(lx, mid + R); c.stroke();
+      c.fillStyle = flat ? '#4cd37b' : '#ffb547'; c.shadowColor = c.fillStyle; c.shadowBlur = 10;
+      c.beginPath(); c.arc(lx + gx * R * .78, mid - gy * R * .78, R * .16, 0, TAU); c.fill(); c.shadowBlur = 0;
+      txt(c, flat ? 'LEVEL' : 'level', lx, mid + R + 16, 11, flat ? '#4cd37b' : '#6d8a80');
+      // --- 3D phone (centre): real orientation, drawn by projecting its four corners
+      const D = Math.PI / 180, cb = Math.cos(s.b * D), sb = Math.sin(s.b * D), cg = Math.cos(s.c * D), sg = Math.sin(s.c * D), el = 25 * D, S = Math.min(64, h * .42);
+      const P = (x, y) => {                                 // device (x right, y top) → screen
+        const E = x * cg, N = y * cb + x * sg * sb, U = y * sb - x * sg * cb;
+        return [w * .5 + E * S, mid - (U * Math.cos(el) + N * Math.sin(el)) * S];
+      };
+      const nN = -cg * sb, nU = cg * cb, front = nN * -Math.cos(el) + nU * Math.sin(el) > 0;
+      const corners = [[-.25, .5], [.25, .5], [.25, -.5], [-.25, -.5]].map(p => P(p[0], p[1]));
+      c.beginPath(); corners.forEach((p, i) => i ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1])); c.closePath();
+      c.fillStyle = front ? '#1f6feb' : '#5a6270'; c.fill(); c.lineWidth = 3; c.strokeStyle = '#dbe4f0'; c.lineJoin = 'round'; c.stroke();
+      const a = P(-.08, .43), b2 = P(.08, .43);              // speaker slot marks the top edge
+      c.strokeStyle = '#fff'; c.lineWidth = 3; c.lineCap = 'round'; c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b2[0], b2[1]); c.stroke();
+      if (!front) { const q = P(-.14, .36); c.fillStyle = '#222'; c.beginPath(); c.arc(q[0], q[1], 4, 0, TAU); c.fill(); }
+      txt(c, front ? 'screen side' : 'back side', w * .5, h - 6, 10, '#6d8a80');
+      // --- compass (right): alpha is the heading relative to where the phone started
+      const cx2 = w * .8, r2 = Math.min(30, w * .1), ang = -s.al * D;
+      c.strokeStyle = '#2f4a42'; c.lineWidth = 2; c.beginPath(); c.arc(cx2, mid, r2, 0, TAU); c.stroke();
+      c.save(); c.translate(cx2, mid); c.rotate(ang);
+      c.fillStyle = '#ff6b6b'; c.beginPath(); c.moveTo(0, -r2 + 3); c.lineTo(6, 0); c.lineTo(-6, 0); c.fill();
+      c.fillStyle = '#8a92a3'; c.beginPath(); c.moveTo(0, r2 - 3); c.lineTo(6, 0); c.lineTo(-6, 0); c.fill(); c.restore();
+      txt(c, `${s.al.toFixed(0)}°`, cx2, mid + r2 + 16, 11, '#6d8a80');
+      // --- live force bar (far right)
+      const lvl = clamp((s.f - .5) / 3, 0, 1);
+      c.fillStyle = '#1b2a26'; c.fillRect(w - 12, 10, 6, h - 20); c.fillStyle = lvl > .5 ? '#ffb547' : '#34d399'; c.fillRect(w - 12, 10 + (h - 20) * (1 - lvl), 6, (h - 20) * lvl);
+    }
+  };
+
   window.GAMES = GAMES;
 })();
