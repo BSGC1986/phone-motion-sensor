@@ -16,6 +16,8 @@ import org.json.JSONObject;
 
 import java.nio.charset.StandardCharsets;
 
+import javax.net.ssl.SSLContext;
+
 /**
  * The phone's line to the PC, through a public MQTT broker.
  * Same JSON messages as the web version:  phone → PC on  motiongames/v1/&lt;game&gt;/up,
@@ -27,13 +29,30 @@ class Link implements MqttCallbackExtended {
         void onMsg(JSONObject m);
     }
 
-    private static final String BROKER = "ssl://broker.hivemq.com:8883";
+    // Same public broker, three routes. If one is blocked by the network (some Wi-Fi blocks odd ports) we try the next.
+    private static final String[] BROKERS = {
+            "ssl://broker.hivemq.com:8883",           // MQTT over TLS
+            "wss://broker.hivemq.com:8884/mqtt",      // MQTT over a secure WebSocket (what the PC's browser uses)
+            "tcp://broker.hivemq.com:1883"            // plain MQTT (readings only — nothing private)
+    };
 
     private final String base, dev;
     private final Listener ln;
     private final Handler main = new Handler(Looper.getMainLooper());
     private MqttAsyncClient cl;
     private volatile boolean stopped;
+    private int route = 0;
+
+    /** The deepest cause, e.g. "UnknownHostException: broker.hivemq.com" — what the user actually needs to see. */
+    private static String why(Throwable e) {
+        Throwable t = e;
+        while (t != null && t.getCause() != null && t.getCause() != t) t = t.getCause();
+        if (t == null) return "unknown error";
+        String m = t.getMessage();
+        return t.getClass().getSimpleName() + (m != null && !m.isEmpty() ? ": " + (m.length() > 90 ? m.substring(0, 90) + "…" : m) : "");
+    }
+
+    private static String routeName(String uri) { return uri.startsWith("ssl") ? "TLS" : uri.startsWith("wss") ? "WebSocket" : "plain"; }
 
     /** @param gameId the host id, e.g. "mg-K7QX2M" */
     Link(String gameId, String dev, Listener ln) {
@@ -50,27 +69,32 @@ class Link implements MqttCallbackExtended {
     private void connect() {
         if (stopped) return;
         if (cl != null) { try { cl.close(); } catch (Exception ignored) { } cl = null; }      // drop a failed attempt before retrying
+        final String uri = BROKERS[route];
         try {
-            cl = new MqttAsyncClient(BROKER, "mgp-" + dev + "-" + (int) (Math.random() * 1e6), new MemoryPersistence());
+            cl = new MqttAsyncClient(uri, "mgp-" + dev + "-" + (int) (Math.random() * 1e6), new MemoryPersistence());
             cl.setCallback(this);
             MqttConnectOptions o = new MqttConnectOptions();
             o.setCleanSession(true);
             o.setAutomaticReconnect(true);
             o.setKeepAliveInterval(20);
-            o.setConnectionTimeout(15);
+            o.setConnectionTimeout(10);
             o.setWill(base + "/up", byeJson().getBytes(StandardCharsets.UTF_8), 0, false);
-            ln.onConn("Connecting…", false);
+            if (!uri.startsWith("tcp")) o.setSocketFactory(SSLContext.getDefault().getSocketFactory());   // use Android's own TLS, not Paho's
+            ln.onConn("Connecting (" + routeName(uri) + ")…", false);
             cl.connect(o, null, new IMqttActionListener() {
                 @Override public void onSuccess(IMqttToken t) { /* connectComplete() does the work */ }
-                @Override public void onFailure(IMqttToken t, Throwable e) {
-                    ln.onConn("Can't reach the game server — retrying…", false);
-                    main.postDelayed(Link.this::connect, 5000);
-                }
+                @Override public void onFailure(IMqttToken t, Throwable e) { failed(uri, e); }
             });
-        } catch (MqttException e) {
-            ln.onConn("Connection error — retrying…", false);
-            main.postDelayed(this::connect, 5000);
+        } catch (Throwable e) {
+            failed(uri, e);
         }
+    }
+
+    private void failed(String uri, Throwable e) {
+        if (stopped) return;
+        route = (route + 1) % BROKERS.length;
+        ln.onConn("Can't reach the game server via " + routeName(uri) + " (" + why(e) + ") — trying " + routeName(BROKERS[route]) + "…", false);
+        main.postDelayed(this::connect, route == 0 ? 6000 : 1500);              // quick through the routes, then a breather
     }
 
     private String byeJson() {
@@ -111,7 +135,7 @@ class Link implements MqttCallbackExtended {
             cl.subscribe(base + "/dn/" + dev, 0);
             cl.subscribe(base + "/all", 0);
         } catch (MqttException ignored) { }
-        ln.onConn("Connected ✓", true);
+        ln.onConn("Connected ✓ (" + routeName(uri) + ")", true);
         sendHello();
     }
 
