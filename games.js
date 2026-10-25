@@ -93,8 +93,8 @@
   GAMES.waiter = {
     id: 'waiter', emoji: '🍽️', title: 'Waiter Service', accent: '#4cc9f0', mode: 'stopwatch', better: 'high',
     blurb: 'Carry the tray round the course without spilling a drop.',
-    how: 'Lay the phone flat on a tray. Start at 1000 points: wobbles and tilting drain them, and tipping past 20° is a spill (−50). Press Finished when a team completes the course. Highest score wins, fastest time breaks ties.',
-    settings: [],
+    how: 'Lay the phone flat on a tray. Start at 1000 points: wobbles and tilting drain them, and tipping past the spill angle (set on the right, default 12°) is a spill (−50). Press Finished when a team completes the course. Highest score wins, fastest time breaks ties.',
+    settings: [{ k: 'spill', type: 'range', min: 4, max: 40, step: 1, val: 12, label: 'Spill when tipped more than {v}°' }],
     reset(t) { t.s = { wobPen: 0, tiltPen: 0, spills: 0, lastSpill: -1e9, rate: 0, tilt: 0, finished: false, finT: 0, level: 1, sl: 0, vsl: 0, parts: [], spawn: 0, b0: 0, c0: 0 }; },
     onBegin() { H.teams.forEach(t => { if (t.f) { t.s.b0 = t.f.b; t.s.c0 = t.f.c; } }); },
     onFrame(t, f, d, dt, now) {
@@ -104,7 +104,7 @@
       if (H.st !== 'running' || s.finished) return;
       s.wobPen += d.wob * 120;
       if (s.tilt > 5) s.tiltPen += (s.tilt - 5) * dt / 1000 * .5;
-      if (s.tilt > 20 && now - s.lastSpill > 1500) {
+      if (s.tilt > H.set.spill && now - s.lastSpill > 1500) {
         s.spills++; s.lastSpill = now; s.level = Math.max(.15, s.level - .12); s.spawn = (f.c - s.c0) >= 0 ? 1 : -1;
         H.beep(170, 220, .2, 'sawtooth'); H.log(t, '💦 spilled!');
       }
@@ -112,8 +112,8 @@
     score: t => Math.max(0, Math.round(1000 - t.s.wobPen - t.s.tiltPen - t.s.spills * 50)),
     rankKey: t => GAMES.waiter.score(t) * 1e6 - t.s.finT,
     scoreText: t => GAMES.waiter.score(t) + ' pts',
-    sub: t => `Spills ${t.s.spills}${t.s.finished ? ' · 🏁 ' + H.fmt(t.s.finT, true) : ''}`,
-    phone: (t, now) => ({ big: GAMES.waiter.score(t), sub: `Spills: ${t.s.spills}${t.s.finished ? ' · finished!' : ''}`, meter: clamp(1 - t.s.rate * 6, 0, 1), bg: now - t.s.lastSpill < 700 ? '#4a1620' : null }),
+    sub: t => `Tilt ${t.s.tilt.toFixed(0)}° · Spills ${t.s.spills}${t.s.finished ? ' · 🏁 ' + H.fmt(t.s.finT, true) : ''}`,
+    phone: (t, now) => ({ big: GAMES.waiter.score(t), sub: `Tilt ${t.s.tilt.toFixed(0)}° · Spills: ${t.s.spills}${t.s.finished ? ' · finished!' : ''}`, meter: clamp(1 - t.s.rate * 6, 0, 1), bg: now - t.s.lastSpill < 700 ? '#4a1620' : null }),
     onFinish() { H.teams.forEach(t => { if (!t.s.finished) { t.s.finished = true; t.s.finT = H.el; } }); },
     extra: () => '<button class="fin">🏁 Finished!</button>',
     bind(t, el) {
@@ -153,7 +153,8 @@
       s.parts = s.parts.filter(p => (p.a += dt) < 1.1);
       s.parts.forEach(p => { p.vy += 600 * dt; p.x += p.vx * dt; p.y += p.vy * dt; c.globalAlpha = 1 - p.a / 1.1; c.fillStyle = t.color; c.beginPath(); c.arc(p.x, p.y, 3, 0, TAU); c.fill(); });
       c.globalAlpha = 1;
-      txt(c, `${s.tilt.toFixed(0)}°`, 8, 18, 13, s.tilt > 20 ? '#ff6b6b' : s.tilt > 5 ? '#ffb547' : '#8a92a3', 'left');
+      txt(c, `${s.tilt.toFixed(0)}°`, 8, 18, 13, s.tilt > H.set.spill ? '#ff6b6b' : s.tilt > 5 ? '#ffb547' : '#8a92a3', 'left');
+      // (spill threshold is a setting; recolour when past it)
       if (now - s.lastSpill < 900) txt(c, 'SPILL!', w - 10, 20, 15, '#ff6b6b', 'right', 800);
     }
   };
