@@ -124,7 +124,7 @@
       $('pJoinCard').classList.add('hidden'); $('pStartCard').classList.remove('hidden');
       if (/Android/i.test(navigator.userAgent)) {            // hand over to the app if it is installed, otherwise offer the download
         const dir = baseUrl.replace(/[^/]*$/, '');
-        $('pApp').href = `intent://join/${c}#Intent;scheme=motiongames;package=com.bsgc.motiongames;S.browser_fallback_url=${encodeURIComponent(dir + 'motiongames.apk')};end`;
+        $('pApp').href = `intent://join/${c}#Intent;scheme=motiongames;package=com.bsgc.motiongames;S.browser_fallback_url=${encodeURIComponent(dir + 'app.html')};end`;
         $('pApp').classList.remove('hidden');
       }
     };

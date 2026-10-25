@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0f1115">
+<title>Motion Games — Android app</title>
+<style>
+  :root { --bg: #0f1115; --card: #181b22; --line: #2a2f3a; --text: #e8eaf0; --muted: #8a92a3; --accent: #ffb547; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, sans-serif; padding: 16px; max-width: 680px; margin-inline: auto; }
+  h1 { font-size: 1.4rem; margin: 8px 0 4px; } h2 { font-size: 1.05rem; margin: 0 0 8px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; margin: 12px 0; }
+  .dl { display: block; text-align: center; background: var(--accent); color: #1a1200; font-weight: 800; font-size: 1.15rem; padding: 16px; border-radius: 12px; text-decoration: none; }
+  a { color: #5aa8ff; } .muted { color: var(--muted); font-size: .92rem; }
+  ol, ul { padding-left: 1.2rem; margin: 6px 0; } li { margin: 5px 0; }
+</style>
+</head>
+<body>
+<a href="./">← Motion Games</a>
+<h1>📲 Motion Games — Android app</h1>
+<p class="muted">The web page stops sending when a phone's screen turns off. This small app keeps the sensors running with the screen off, so a phone can sit in a ball without the screen being on. Android only.</p>
+
+<a class="dl" href="motiongames.apk" download>⬇ Download the app (152 KB)</a>
+
+<div class="card">
+  <h2>1. Install it</h2>
+  <ol>
+    <li>Open the downloaded file <b>motiongames.apk</b> (from the notification or the Downloads app).</li>
+    <li>Android will say it can't install apps from this source. Tap <b>Settings</b> and switch on <b>Allow from this source</b>, then go back.</li>
+    <li>If <i>Play Protect</i> warns about an unrecognised app, tap <b>More details → Install anyway</b>. The app isn't from the Play Store, so this is expected.</li>
+  </ol>
+</div>
+
+<div class="card">
+  <h2>2. Join a game</h2>
+  <ol>
+    <li>On the PC, open the site and note the <b>6-character game code</b>.</li>
+    <li>Open <b>Motion Games</b> on the phone, type the code, and tap <b>Start sensor</b>. (Allow notifications when asked.)</li>
+    <li>Tap <b>Allow running in the background</b> and choose <b>Allow</b>. This is the important one.</li>
+    <li>Put the phone in the ball. You can turn the screen off — a notification shows while the sensor runs. Tap <b>Stop</b> in the notification (or in the app) when you've finished.</li>
+  </ol>
+  <p class="muted">Shortcut: if you scan the QR code with the phone and the web page opens, tap <b>📲 Open the app</b> and the code is filled in for you.</p>
+</div>
+
+<div class="card">
+  <h2>If it stops when the screen is off</h2>
+  <ul>
+    <li>Settings → Apps → Motion Games → Battery → choose <b>Unrestricted</b> (on some phones: <i>Don't optimise</i>).</li>
+    <li><b>Samsung:</b> Battery → Background usage limits → Never sleeping apps → add Motion Games.</li>
+    <li><b>Xiaomi / Huawei / OnePlus / Oppo:</b> also switch on <i>Autostart</i> and lock the app in the recent-apps list.</li>
+    <li>The phone needs Wi-Fi or mobile data to reach the PC.</li>
+  </ul>
+</div>
+
+<p class="muted">iPhones can't run this app. They can use the web page instead (with <b>Dim screen</b>, which keeps the screen on but black).</p>
+</body>
+</html>

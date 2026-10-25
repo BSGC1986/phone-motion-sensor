@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- an orange ball with seams, inside the 66dp safe zone -->
+    <path
+        android:fillColor="#FFFF9F43"
+        android:pathData="M54,28A26,26 0 1,0 54,80A26,26 0 1,0 54,28Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#99FFFFFF"
+        android:strokeWidth="2.5"
+        android:pathData="M54,28L54,80M28,54L80,54M36,36C46,46 46,62 36,72M72,36C62,46 62,62 72,72" />
+</vector>

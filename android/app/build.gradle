@@ -1,0 +1,38 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.bsgc.motiongames'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.bsgc.motiongames'
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    packaging {
+        resources {
+            excludes += ['META-INF/LICENSE*', 'META-INF/NOTICE*', 'META-INF/DEPENDENCIES']
+        }
+    }
+}
+
+dependencies {
+    // Plain-Java MQTT client (no Android service wrapper)
+    implementation 'org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5'
+}
