@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<title>Bounce Counter</title>
+<style>
+  :root {
+    --bg: #0f1115; --card: #181b22; --line: #2a2f3a; --text: #e8eaf0; --muted: #8a92a3;
+    --accent: #ffb547; --good: #4cd37b; --bad: #ff6b6b; --blue: #5aa8ff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.4 system-ui, sans-serif; padding: 16px 16px 32px; }
+  a { color: var(--blue); text-decoration: none; }
+  h1 { font-size: 1.1rem; margin: 4px 0 12px; font-weight: 600; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-bottom: 12px; }
+  .card h2 { font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+  button { font: inherit; font-weight: 600; border: 0; border-radius: 10px; padding: 12px 16px; background: var(--accent); color: #1a1200; cursor: pointer; }
+  button.alt { background: #262b36; color: var(--text); }
+  button.stop { background: var(--bad); color: #200; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  .muted { color: var(--muted); font-size: .9rem; }
+  .err { color: #ff8a8a; }
+  .hidden { display: none !important; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* picker */
+  .picker { display: grid; gap: 12px; }
+  .picker button { text-align: left; padding: 16px; width: 100%; }
+  .picker button small { display: block; font-weight: 400; opacity: .75; margin-top: 2px; }
+
+  /* game layout */
+  #game { display: grid; gap: 12px; grid-template-columns: 1fr; }
+  @media (min-width: 900px) { #game { grid-template-columns: 1.4fr 1fr; align-items: start; } }
+  #scoreCard { text-align: center; border-width: 2px; transition: border-color .1s, background .1s; }
+  #scoreCard.flash { border-color: var(--good); background: #1b2a22; }
+  #scoreCard.ignored { border-color: var(--muted); }
+  #count { font-size: clamp(5rem, 22vw, 11rem); font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+  .cap { color: var(--muted); font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; }
+  #timer { font-size: clamp(2.4rem, 9vw, 4.5rem); font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 8px; }
+  #pill { display: inline-block; padding: 2px 12px; border-radius: 99px; background: #262b36; font-size: .8rem; margin-top: 6px; }
+  #pill.running { background: #1d3b2a; color: var(--good); }
+  #pill.armed { background: #3b3216; color: var(--accent); }
+  #pill.finished { background: #3b1d1d; color: var(--bad); }
+  .btns { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; margin-top: 14px; }
+  .btns button { padding: 16px; font-size: 1.1rem; }
+  .settings { display: grid; gap: 12px; }
+  .field label { display: block; font-size: .8rem; color: var(--muted); margin-bottom: 4px; }
+  .time { display: flex; gap: 8px; align-items: center; }
+  input[type=number] { width: 80px; font: inherit; font-size: 1.2rem; padding: 8px; border-radius: 8px; border: 1px solid var(--line); background: #0f1115; color: var(--text); }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .chk { display: flex; gap: 8px; align-items: center; font-size: .95rem; }
+  canvas { width: 100%; height: 130px; display: block; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; margin-top: 4px; }
+  .stats .v { font-size: 1.3rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  #log { list-style: none; padding: 0; margin: 0; max-height: 220px; overflow: auto; font-variant-numeric: tabular-nums; }
+  #log li { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: .95rem; }
+  #qrBox { text-align: center; }
+  #qr { width: min(60vw, 220px); margin: 6px auto; background: #fff; padding: 6px; border-radius: 8px; }
+  #qr svg { width: 100%; height: auto; display: block; }
+  #link { word-break: break-all; font-size: .75rem; }
+  #conn { font-weight: 600; }
+  #conn.ok { color: var(--good); }
+
+  /* sensor (phone) view */
+  #sensorView { text-align: center; }
+  #sGauge { font-size: 3.5rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<a href="./">← Home</a>
+<h1>Bounce Counter</h1>
+
+<!-- 1. choose a role -->
+<div id="picker" class="picker hidden">
+  <button id="pickDisplay">PC display<small>Show the score on this screen. The phone, inside the ball, is the sensor.</small></button>
+  <button id="pickSolo" class="alt">Play on this phone<small>Everything on one device — handy for testing the sensitivity.</small></button>
+</div>
+
+<!-- 2. phone acting as the sensor -->
+<div id="sensorView" class="hidden">
+  <div class="card">
+    <button id="sStart" style="width:100%">Start sensor</button>
+    <div id="sMsg" class="muted" style="margin-top:10px">Tap to start, then put the phone in the ball. Keep this screen on and the browser in front.</div>
+  </div>
+  <div class="card hidden" id="sLive">
+    <div class="cap">Link to display</div>
+    <div id="sConn" style="font-weight:600;margin-bottom:10px">Connecting…</div>
+    <div class="cap">Force now</div>
+    <div id="sGauge">–</div>
+    <div class="muted">g (1 g = resting)</div>
+    <div style="margin-top:12px"><span id="sState" class="muted">idle</span> · count <b id="sCount">0</b></div>
+  </div>
+</div>
+
+<!-- 3. the game (PC display, or solo on the phone) -->
+<div id="game" class="hidden">
+  <div>
+    <div class="card" id="scoreCard">
+      <div class="cap">Bounces</div>
+      <div id="count">0</div>
+      <div id="timer">1:00.0</div>
+      <span id="pill">idle</span>
+      <div class="btns">
+        <button id="startBtn">Start</button>
+        <button id="resetBtn" class="alt">Reset</button>
+      </div>
+      <div class="muted" style="margin-top:8px">Space = start/stop · R = reset</div>
+    </div>
+
+    <div class="card">
+      <h2>Impact force (g)</h2>
+      <canvas id="graph"></canvas>
+      <div class="muted" id="lastHit" style="margin-top:6px">No hits yet. The dashed line is the trigger level.</div>
+    </div>
+  </div>
+
+  <div>
+    <div class="card hidden" id="linkCard">
+      <h2>Phone link</h2>
+      <div id="conn">Starting…</div>
+      <div id="qrBox" class="hidden">
+        <div id="qr"></div>
+        <div class="muted">Scan with the phone, tap <b>Start sensor</b>, then put it in the ball.</div>
+        <div id="link" class="muted"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Timer</h2>
+      <div class="settings">
+        <div class="field">
+          <label>Count bounces for (0:00 = no limit)</label>
+          <div class="time">
+            <input type="number" id="min" min="0" max="99" value="1" inputmode="numeric"> <span class="muted">min</span>
+            <input type="number" id="sec" min="0" max="59" value="0" inputmode="numeric"> <span class="muted">sec</span>
+          </div>
+        </div>
+        <label class="chk"><input type="checkbox" id="onFirst"> Start the clock on the first bounce</label>
+        <label class="chk"><input type="checkbox" id="sound" checked> Sound</label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Sensitivity</h2>
+      <div class="settings">
+        <div class="field">
+          <label>Trigger at <b id="thrV">2.5</b> g — lower is more sensitive</label>
+          <input type="range" id="thr" min="1.3" max="8" step="0.1" value="2.5">
+        </div>
+        <div class="field">
+          <label>Ignore repeat hits within <b id="gapV">200</b> ms</label>
+          <input type="range" id="gap" min="80" max="1000" step="20" value="200">
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>This run</h2>
+      <div class="stats">
+        <div><div class="v" id="stMax">–</div><div class="cap">Max g</div></div>
+        <div><div class="v" id="stAvg">–</div><div class="cap">Avg gap</div></div>
+        <div><div class="v" id="stRate">–</div><div class="cap">Per min</div></div>
+      </div>
+      <ul id="log" style="margin-top:10px"></ul>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const G = 9.81;
+  const joinId = new URLSearchParams(location.search).get('join');
+  const baseUrl = location.href.split(/[?#]/)[0];
+
+  /* ================= Bounce engine (runs where the sensor is) ================= */
+  class Engine {
+    constructor(emit) {
+      this.emit = emit;
+      this.cfg = { thr: 2.5, gap: 200, dur: 60000, onFirst: false };
+      this.mag = 1; this.bucket = 0; this.lastEmit = 0;
+      this.reset();
+    }
+    reset() {
+      this.state = 'idle'; this.count = 0; this.maxG = 0;
+      this.startAt = 0; this.endAt = Infinity; this.el = 0; this.runDur = this.cfg.dur;
+      this.lastHit = -1e9; this.pending = null; this.rearm = true;
+    }
+    cmd(m) {
+      if (m.t === 'cfg') Object.assign(this.cfg, m.cfg);
+      else if (m.t === 'start') this.start();
+      else if (m.t === 'stop') this.stop();
+      else if (m.t === 'reset') this.reset();
+      this.snap(performance.now());
+    }
+    start() {
+      if (this.state === 'running' || this.state === 'armed') return;
+      this.count = 0; this.maxG = 0; this.el = 0; this.pending = null;
+      if (this.cfg.onFirst) { this.state = 'armed'; this.runDur = this.cfg.dur; }
+      else this.begin(performance.now());
+    }
+    begin(t) {
+      this.state = 'running'; this.startAt = t; this.runDur = this.cfg.dur;
+      this.endAt = this.cfg.dur > 0 ? t + this.cfg.dur : Infinity;
+    }
+    stop() {
+      const now = performance.now();
+      if (this.state === 'running') { this.el = now - this.startAt; this.state = 'finished'; this.emit({ t: 'end', n: this.count }); }
+      else if (this.state === 'armed') this.state = 'idle';
+    }
+    // g = total force incl. gravity, in units of g. Rotation-proof: only the size matters, not the direction.
+    feed(g, now) {
+      this.mag = g; if (g > this.bucket) this.bucket = g;
+      const c = this.cfg;
+      if (this.pending) {
+        if (g > this.pending.peak) this.pending.peak = g;
+        if (now - this.pending.t0 >= 40) this.commit();
+      }
+      if (!this.rearm && g < c.thr * 0.7 && now - this.lastHit > c.gap) this.rearm = true;
+      if (this.rearm && !this.pending && g > c.thr && now - this.lastHit > c.gap) {
+        this.pending = { t0: now, peak: g }; this.rearm = false; this.lastHit = now;
+      }
+    }
+    commit() {
+      const p = this.pending; this.pending = null;
+      if (this.state === 'armed') this.begin(p.t0);
+      let counted = false;
+      if (this.state === 'running' && p.t0 <= this.endAt) {
+        this.count++; counted = true;
+        if (p.peak > this.maxG) this.maxG = p.peak;
+      }
+      this.emit({ t: 'hit', n: this.count, g: p.peak, c: counted, at: counted ? p.t0 - this.startAt : 0 });
+    }
+    tick(now) {
+      if (this.pending && now - this.pending.t0 >= 40) this.commit();
+      if (this.state === 'running' && now >= this.endAt) {
+        this.state = 'finished'; this.el = this.runDur; this.emit({ t: 'end', n: this.count });
+      }
+      if (now - this.lastEmit >= 50) this.snap(now);
+    }
+    snap(now) {
+      this.lastEmit = now;
+      const el = this.state === 'running' ? now - this.startAt : (this.state === 'finished' ? this.el : 0);
+      const d = (this.state === 'running' || this.state === 'finished') ? this.runDur : this.cfg.dur;
+      this.emit({ t: 's', st: this.state, n: this.count, el, d, g: this.bucket, mx: this.maxG });
+      this.bucket = this.mag;
+    }
+  }
+
+  /* ================= sensors ================= */
+  let engine = null, sensing = false, wake = null;
+  async function startSensing() {
+    if (!window.isSecureContext) throw new Error('Sensors need HTTPS.');
+    for (const E of [window.DeviceMotionEvent]) {
+      if (E && typeof E.requestPermission === 'function') {
+        if (await E.requestPermission() !== 'granted') throw new Error('Motion permission was denied.');
+      }
+    }
+    window.addEventListener('devicemotion', e => {
+      const a = e.accelerationIncludingGravity;
+      if (!a || a.x == null || !engine) return;
+      sensing = true;
+      engine.feed(Math.hypot(a.x, a.y, a.z) / G, performance.now());
+    });
+    setInterval(() => engine && engine.tick(performance.now()), 20);
+    getWake();
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') getWake(); });
+    await new Promise(r => setTimeout(r, 1500));
+    if (!sensing) throw new Error('No motion data. Use a phone and allow Motion sensors in Chrome site settings.');
+  }
+  async function getWake() { try { if ('wakeLock' in navigator) wake = await navigator.wakeLock.request('screen'); } catch (_) {} }
+
+  /* ================= phone as sensor ================= */
+  function runSensor(id) {
+    $('sensorView').classList.remove('hidden');
+    let peer, conn, retry = false;
+    const setConn = (txt, ok) => { $('sConn').textContent = txt; $('sConn').style.color = ok ? 'var(--good)' : 'var(--accent)'; };
+
+    engine = new Engine(msg => {
+      if (conn && conn.open) conn.send(msg);
+      if (msg.t === 's') {
+        $('sGauge').textContent = msg.g.toFixed(1);
+        $('sState').textContent = msg.st; $('sCount').textContent = msg.n;
+      }
+    });
+
+    function connect() {
+      retry = false;
+      conn = peer.connect(id, { reliable: true });
+      conn.on('open', () => setConn('Connected to display ✓', true));
+      conn.on('data', m => engine.cmd(m));
+      const lost = () => { setConn('Reconnecting…', false); if (!retry) { retry = true; setTimeout(connect, 2000); } };
+      conn.on('close', lost); conn.on('error', lost);
+    }
+
+    $('sStart').addEventListener('click', async () => {
+      $('sMsg').className = 'muted'; $('sMsg').textContent = 'Starting…';
+      try { await startSensing(); } catch (e) { $('sMsg').className = 'err'; $('sMsg').textContent = e.message; return; }
+      $('sStart').classList.add('hidden');
+      $('sMsg').textContent = 'Sensor running. Put the phone in the ball — control it from the display.';
+      $('sLive').classList.remove('hidden');
+      peer = new Peer();
+      peer.on('open', connect);
+      peer.on('disconnected', () => peer.reconnect());
+      peer.on('error', e => {
+        setConn(e.type === 'peer-unavailable' ? 'Display not found — is it open?' : 'Link error: ' + e.type, false);
+        if (e.type === 'peer-unavailable' && !retry) { retry = true; setTimeout(connect, 2000); }
+      });
+    });
+  }
+
+  /* ================= display UI (PC, or solo on a phone) ================= */
+  let send = () => {}, linked = false, mode = '';
+  const log = [], hist = [];
+  let last = null, audio = null;
+
+  function beep(freq, ms, vol = 0.15) {
+    if (!$('sound').checked) return;
+    try {
+      audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+      const o = audio.createOscillator(), g = audio.createGain();
+      o.frequency.value = freq; g.gain.value = vol;
+      o.connect(g); g.connect(audio.destination);
+      o.start(); g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + ms / 1000);
+      o.stop(audio.currentTime + ms / 1000);
+    } catch (_) {}
+  }
+
+  const cfgFromUi = () => ({
+    thr: +$('thr').value, gap: +$('gap').value,
+    dur: ((+$('min').value || 0) * 60 + (+$('sec').value || 0)) * 1000,
+    onFirst: $('onFirst').checked
+  });
+  const pushCfg = () => {
+    $('thrV').textContent = (+$('thr').value).toFixed(1);
+    $('gapV').textContent = $('gap').value;
+    send({ t: 'cfg', cfg: cfgFromUi() });
+    if (!last || last.st === 'idle') showTimer(null);
+  };
+  ['thr', 'gap', 'min', 'sec', 'onFirst'].forEach(id => $(id).addEventListener('input', pushCfg));
+
+  function fmt(ms, up) {
+    const t = up ? Math.floor(ms / 100) : Math.ceil(ms / 100);
+    return `${Math.floor(t / 600)}:${String(Math.floor(t / 10) % 60).padStart(2, '0')}.${t % 10}`;
+  }
+  function showTimer(s) {
+    const d = s ? s.d : cfgFromUi().dur, el = s ? s.el : 0;
+    $('timer').textContent = d > 0 ? fmt(Math.max(0, d - el), false) : fmt(el, true);
+  }
+
+  function onMsg(m) {
+    if (m.t === 's') {
+      last = m;
+      $('count').textContent = m.n;
+      $('pill').textContent = { idle: 'ready', armed: 'waiting for first bounce', running: 'counting', finished: m.d > 0 && m.el >= m.d ? "time's up" : 'stopped' }[m.st];
+      $('pill').className = m.st;
+      $('startBtn').textContent = (m.st === 'running' || m.st === 'armed') ? 'Stop' : 'Start';
+      $('startBtn').className = (m.st === 'running' || m.st === 'armed') ? 'stop' : '';
+      showTimer(m);
+      $('stMax').textContent = m.mx ? m.mx.toFixed(1) : '–';
+      const run = m.el > 0 ? m.n / (m.el / 60000) : 0;
+      $('stRate').textContent = m.n > 0 && m.el > 2000 ? run.toFixed(0) : '–';
+      hist.push({ t: performance.now(), g: m.g });
+    } else if (m.t === 'hit') {
+      $('lastHit').textContent = `Last hit ${m.g.toFixed(1)} g — ${m.c ? 'counted' : 'not counted (timer not running)'}`;
+      const card = $('scoreCard');
+      card.classList.add(m.c ? 'flash' : 'ignored');
+      setTimeout(() => card.classList.remove('flash', 'ignored'), 150);
+      if (m.c) {
+        beep(880, 90);
+        log.unshift({ n: m.n, at: m.at, g: m.g });
+        if (log.length > 50) log.pop();
+        renderLog();
+      }
+    } else if (m.t === 'end') {
+      beep(440, 500, 0.25);
+    }
+  }
+  function renderLog() {
+    $('log').innerHTML = log.slice(0, 12).map(e =>
+      `<li><span>#${e.n}</span><span class="muted">${fmt(e.at, true)}</span><span>${e.g.toFixed(1)} g</span></li>`).join('');
+    const n = log.length;
+    $('stAvg').textContent = n > 1 ? ((log[0].at - log[n - 1].at) / (n - 1) / 1000).toFixed(2) + ' s' : '–';
+  }
+  function resetUi() { log.length = 0; hist.length = 0; renderLog(); $('lastHit').textContent = 'No hits yet. The dashed line is the trigger level.'; }
+
+  $('startBtn').addEventListener('click', () => {
+    if (last && (last.st === 'running' || last.st === 'armed')) send({ t: 'stop' });
+    else { resetUi(); pushCfg(); send({ t: 'start' }); }
+  });
+  $('resetBtn').addEventListener('click', () => { resetUi(); send({ t: 'reset' }); });
+  document.addEventListener('keydown', e => {
+    if (!$('game') || $('game').classList.contains('hidden') || /INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
+    if (e.code === 'Space') { e.preventDefault(); $('startBtn').click(); }
+    if (e.key === 'r' || e.key === 'R') $('resetBtn').click();
+  });
+
+  /* ---- graph ---- */
+  const cv = $('graph'), ctx = cv.getContext('2d'), SPAN = 8000;
+  function sizeCanvas() { const r = devicePixelRatio || 1; cv.width = cv.clientWidth * r; cv.height = cv.clientHeight * r; ctx.setTransform(r, 0, 0, r, 0, 0); }
+  addEventListener('resize', sizeCanvas);
+  function draw() {
+    requestAnimationFrame(draw);
+    if ($('game').classList.contains('hidden')) return;
+    if (cv.width === 0) sizeCanvas();
+    const w = cv.clientWidth, h = cv.clientHeight, now = performance.now(), thr = +$('thr').value;
+    while (hist.length && now - hist[0].t > SPAN) hist.shift();
+    const top = Math.max(6, thr * 1.4, ...hist.map(p => p.g));
+    const y = g => h - 14 - (g / top) * (h - 20);
+    ctx.clearRect(0, 0, w, h);
+    ctx.font = '10px system-ui'; ctx.fillStyle = '#8a92a3';
+    ctx.fillText(top.toFixed(0) + ' g', 2, 10); ctx.fillText('0', 2, h - 3);
+    ctx.setLineDash([5, 4]); ctx.strokeStyle = '#ff6b6b'; ctx.beginPath(); ctx.moveTo(0, y(thr)); ctx.lineTo(w, y(thr)); ctx.stroke(); ctx.setLineDash([]);
+    if (hist.length < 2) return;
+    ctx.strokeStyle = '#ffb547'; ctx.lineWidth = 1.5; ctx.beginPath();
+    hist.forEach((p, i) => { const px = w - (now - p.t) / SPAN * w; i ? ctx.lineTo(px, y(p.g)) : ctx.moveTo(px, y(p.g)); });
+    ctx.stroke(); ctx.lineWidth = 1;
+  }
+
+  function enterGame() {
+    $('picker').classList.add('hidden'); $('game').classList.remove('hidden');
+    sizeCanvas(); draw(); pushCfg();
+  }
+
+  /* ---- solo: this phone does everything ---- */
+  $('pickSolo').addEventListener('click', async () => {
+    mode = 'solo';
+    try { engine = new Engine(onMsg); await startSensing(); } catch (e) { alert(e.message); return; }
+    send = m => engine.cmd(m);
+    enterGame();
+  });
+
+  /* ---- PC display: phone connects to us ---- */
+  $('pickDisplay').addEventListener('click', () => {
+    mode = 'display';
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();   // unlock sound from this click
+    let id; try { id = localStorage.getItem('bounceId'); } catch (_) {}
+    const newId = () => 'ymb-' + Math.random().toString(36).slice(2, 8);
+    let conn = null;
+    send = m => { if (conn && conn.open) conn.send(m); };
+    $('linkCard').classList.remove('hidden');
+    enterGame();
+    ['startBtn', 'resetBtn'].forEach(b => $(b).disabled = true);
+
+    const setLinked = ok => {
+      linked = ok;
+      $('conn').textContent = ok ? 'Phone connected ✓' : 'Waiting for the phone…';
+      $('conn').className = ok ? 'ok' : '';
+      $('qrBox').classList.toggle('hidden', ok);
+      ['startBtn', 'resetBtn'].forEach(b => $(b).disabled = !ok);
+    };
+    function open(id) {
+      try { localStorage.setItem('bounceId', id); } catch (_) {}
+      const peer = new Peer(id);
+      peer.on('open', () => {
+        const url = `${baseUrl}?join=${id}`;
+        const qr = qrcode(0, 'M'); qr.addData(url); qr.make();
+        $('qr').innerHTML = qr.createSvgTag({ cellSize: 6, margin: 0, scalable: true });
+        $('link').textContent = url;
+        setLinked(false);
+      });
+      peer.on('connection', c => {
+        if (conn && conn.open) conn.close();
+        conn = c;
+        c.on('open', () => { setLinked(true); pushCfg(); });
+        c.on('data', onMsg);
+        c.on('close', () => { if (conn === c) setLinked(false); });
+      });
+      peer.on('disconnected', () => peer.reconnect());
+      peer.on('error', e => {
+        if (e.type === 'unavailable-id') { peer.destroy(); open(newId()); }
+        else { $('conn').textContent = 'Link error: ' + e.type; $('conn').className = 'err'; }
+      });
+    }
+    open(id || newId());
+  });
+
+  /* ---- start-up ---- */
+  if (joinId) runSensor(joinId);
+  else $('picker').classList.remove('hidden');
+})();
+</script>
+</body>
+</html>
