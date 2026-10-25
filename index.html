@@ -135,7 +135,9 @@
   #qrBox { text-align: center; margin-bottom: 10px; }
   #qr { width: min(60vw, 190px); margin: 6px auto; background: #fff; padding: 6px; border-radius: 8px; }
   #qr svg { width: 100%; height: auto; display: block; }
-  #link { word-break: break-all; font-size: .7rem; }
+  #link { word-break: break-all; }
+  #codeBig { text-align: center; font: 800 2.6rem ui-monospace, Consolas, monospace; letter-spacing: .16em; color: var(--ga); user-select: all; }
+  #pCode { width: 100%; font: 800 2rem ui-monospace, Consolas, monospace; letter-spacing: .2em; text-align: center; text-transform: uppercase; padding: 12px; margin: 10px 0; border-radius: 12px; border: 2px solid var(--line); background: #0f1115; color: var(--text); }
   #conn { font-weight: 600; margin-bottom: 8px; }
   .prow { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
   .prow input { flex: 1; min-width: 0; font: inherit; background: #0f1115; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
@@ -197,9 +199,12 @@
         <h2>Phones</h2>
         <div id="conn" class="muted">Starting…</div>
         <div id="qrBox" class="hidden">
+          <div class="cap" style="text-align:center">Game code</div>
+          <div id="codeBig">––––––</div>
           <div id="qr"></div>
-          <div class="muted">Scan with each phone, tap <b>Start sensor</b>. Each phone becomes a team.</div>
-          <div id="link" class="muted"></div>
+          <div class="muted">On each <b>phone</b>, scan this QR code (or open <b id="link"></b>), check the code, and tap <b>Start sensor</b>. Each phone becomes a team. A PC can't be a sensor — phones only.</div>
+          <div class="muted" style="margin-top:8px">📲 <b>Android app</b> (keeps working with the screen off): <a href="motiongames.apk">download</a>, then type the same code.</div>
+          <button id="newGameBtn" class="alt" style="margin-top:10px;padding:6px 12px">New game code</button>
         </div>
         <div id="phones"></div>
       </div>
@@ -214,9 +219,19 @@
 
 <!-- ============ PHONE (sensor) ============ -->
 <div id="phone" class="hidden">
-  <div class="card" id="pStartCard">
+  <div class="card hidden" id="pJoinCard">
+    <h2 style="font-size:1.2rem;margin:0 0 6px">🎮 Join a game</h2>
+    <div class="muted">Type the 6-character game code shown on the PC screen.</div>
+    <input id="pCode" maxlength="9" autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="K7QX2M">
+    <button id="pJoin" style="width:100%">Join game</button>
+    <div id="pJoinMsg" class="err" style="margin-top:8px"></div>
+    <div class="muted" style="margin-top:14px"><a href="?host=1">Use this device as the display instead</a></div>
+  </div>
+  <div class="card hidden" id="pStartCard">
+    <div style="margin-bottom:10px">Game <b id="pGameCode" style="letter-spacing:.12em"></b> · <a id="pChange" href="#">wrong code?</a></div>
     <button id="pStart" style="width:100%">Start sensor</button>
     <div id="pMsg" class="muted" style="margin-top:10px">Tap to start, then use the phone as the game needs. Keep this screen on and the browser in front.</div>
+    <a id="pApp" class="hidden" href="#" style="display:block;margin-top:14px;font-weight:700">📲 Have the Android app? Open it instead (works with the screen off)</a>
   </div>
   <div id="pLive" class="hidden">
     <div id="pBox">
@@ -240,7 +255,8 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-<script src="games.js?v=6"></script>
-<script src="app.js?v=6"></script>
+<script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<script src="games.js?v=7"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>

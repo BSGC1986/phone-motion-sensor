@@ -7,7 +7,16 @@
   const G = 9.81, TAU = Math.PI * 2;
   const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
   const params = new URLSearchParams(location.search);
-  const joinId = params.get('join');
+  // Every game has its own 6-character code (no I, O, 0 or 1 so it is easy to read out and type).
+  const ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const newCode = () => { const r = new Uint32Array(6); crypto.getRandomValues(r); return Array.from(r, x => ALPHA[x % ALPHA.length]).join(''); };
+  const normCode = s => { const c = String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^MG(?=[A-Z0-9]{6}$)/, ''); return /^[A-HJ-NP-Z2-9]{6}$/.test(c) ? c : null; };
+  // A PC is never a sensor: desktops always host. Phones and tablets join (add ?host=1 to host from one).
+  // ('dev' is only used by the automated tests to run a fake phone in a desktop browser.)
+  const isMobile = /Android|iPhone|iPad|iPod|Mobile|Silk/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+  const asPhone = params.has('dev') || (isMobile && !params.has('host'));
+  const joinPrefill = normCode(params.get('join'));
+  window.__role = asPhone ? 'phone' : 'host';
   const baseUrl = location.href.split(/[?#]/)[0];
   const GAMES = window.GAMES;
   const COLORS = ['#ff6b6b', '#5aa8ff', '#4cd37b', '#ffb547', '#c084fc', '#2dd4bf', '#f472b6', '#a3e635'];
@@ -32,7 +41,7 @@
     return `${Math.floor(t / 600)}:${String(Math.floor(t / 10) % 60).padStart(2, '0')}.${t % 10}`;
   };
   async function wake() { try { if ('wakeLock' in navigator) await navigator.wakeLock.request('screen'); } catch (_) {} }
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && (joinId || window.__hostOn)) wake(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && window.__role) wake(); });
 
   /* =====================================================================
      PHONE SIDE — reads sensors, streams frames, shows the host's status
@@ -97,11 +106,32 @@
     }
   }
 
-  function runPhone(hostId) {
+  function runPhone(prefill) {
     $('phone').classList.remove('hidden');
     let devId = params.get('dev') || lsGet('mgDev');
     if (!devId) { devId = Math.random().toString(36).slice(2, 10); lsSet('mgDev', devId); }
-    let peer, conn, retry = false;
+    let peer, conn, retry = false, hostId = null, sensorOn = false, everConnected = false;
+
+    /* step 1 — type the game code (the QR code fills it in for you) */
+    const showJoin = msg => {
+      $('pStartCard').classList.add('hidden'); $('pLive').classList.add('hidden'); $('pJoinCard').classList.remove('hidden');
+      $('pJoinMsg').textContent = msg || '';
+    };
+    const join = () => {
+      const c = normCode($('pCode').value);
+      if (!c) { $('pJoinMsg').textContent = 'That code is not valid. It is 6 letters and numbers (never O, I, 0 or 1).'; return; }
+      hostId = 'mg-' + c; $('pGameCode').textContent = c; $('pJoinMsg').textContent = '';
+      $('pJoinCard').classList.add('hidden'); $('pStartCard').classList.remove('hidden');
+      if (/Android/i.test(navigator.userAgent)) {            // hand over to the app if it is installed, otherwise offer the download
+        const dir = baseUrl.replace(/[^/]*$/, '');
+        $('pApp').href = `intent://join/${c}#Intent;scheme=motiongames;package=com.bsgc.motiongames;S.browser_fallback_url=${encodeURIComponent(dir + 'motiongames.apk')};end`;
+        $('pApp').classList.remove('hidden');
+      }
+    };
+    $('pJoin').onclick = join;
+    $('pCode').addEventListener('keydown', e => { if (e.key === 'Enter') join(); });
+    $('pChange').onclick = e => { e.preventDefault(); showJoin(); };
+    $('pCode').value = prefill || ''; showJoin();
     const setConn = (txt, ok) => {
       $('pConn').textContent = txt; $('pConn').style.color = ok ? 'var(--good)' : 'var(--accent)';
       $('pDimDot').style.background = ok ? '#0a3d1c' : '#4a3500';          // faint status light in dim mode
@@ -143,20 +173,30 @@
     function connect() {
       retry = false;
       conn = peer.connect(hostId, { reliable: true });
-      conn.on('open', () => { setConn('Connected ✓', true); conn.send({ t: 'hello', id: devId }); });
+      conn.on('open', () => { everConnected = true; setConn('Connected ✓', true); conn.send({ t: 'hello', id: devId }); });
       conn.on('data', onData);
       const lost = () => { setConn('Reconnecting…', false); if (!retry) { retry = true; setTimeout(connect, 2000); } };
       conn.on('close', lost); conn.on('error', lost);
     }
     $('pStart').addEventListener('click', async () => {
       $('pMsg').className = 'muted'; $('pMsg').textContent = 'Starting…';
-      try { await sensor.start(); } catch (e) { $('pMsg').className = 'err'; $('pMsg').textContent = e.message; return; }
+      if (!sensorOn) {
+        try { await sensor.start(); sensorOn = true; } catch (e) { $('pMsg').className = 'err'; $('pMsg').textContent = e.message; return; }
+      }
       $('pStartCard').classList.add('hidden'); $('pLive').classList.remove('hidden');
+      clearTimeout(autoT);
       if ($('pAuto').checked) autoT = setTimeout(() => { if ($('pAuto').checked) dim(true); }, 20000);
-      peer = new Peer();
-      peer.on('open', connect);
-      peer.on('disconnected', () => peer.reconnect());
-      peer.on('error', e => {
+      everConnected = false; retry = false;
+      if (peer) { try { peer.destroy(); } catch (_) {} }
+      const p = peer = new Peer();
+      p.on('open', connect);
+      p.on('disconnected', () => { if (!p.destroyed) p.reconnect(); });
+      p.on('error', e => {
+        if (e.type === 'peer-unavailable' && !everConnected) {          // wrong code: nobody is hosting that game
+          dim(false); clearTimeout(autoT); try { p.destroy(); } catch (_) {}
+          showJoin(`No game found with code ${$('pGameCode').textContent}. Check the code on the PC screen and try again.`);
+          return;
+        }
         setConn(e.type === 'peer-unavailable' ? 'Host not found — is it open?' : 'Link error: ' + e.type, false);
         if (e.type === 'peer-unavailable' && !retry) { retry = true; setTimeout(connect, 2000); }
       });
@@ -251,7 +291,7 @@
     $('phones').innerHTML = H.teams.length ? '' : '<div class="muted">No phones yet — scan the QR code.</div>';
     H.teams.forEach(t => {
       const row = document.createElement('div'); row.className = 'prow';
-      row.innerHTML = `<span class="dot" style="background:${t.color}"></span><input maxlength="20" aria-label="Team name"><span class="pst ${t.asleep ? 'zz' : t.online ? 'on' : ''}">${t.asleep ? '😴 asleep' : t.online ? '● online' : '○ offline'}</span>${t.online ? '' : '<button class="x" title="Remove">×</button>'}`;
+      row.innerHTML = `<span class="dot" style="background:${t.color}"></span><input maxlength="20" aria-label="Team name"><span class="pst ${t.asleep ? 'zz' : t.online ? 'on' : ''}">${t.asleep ? '😴 asleep' : t.online ? '● online' : '○ offline'}${t.kind === 'app' ? ' 📲' : ''}</span>${t.online ? '' : '<button class="x" title="Remove">×</button>'}`;
       const inp = row.querySelector('input'); inp.value = t.name;
       inp.oninput = () => { t.name = inp.value; saveNames(); t.lastPh = ''; };
       const x = row.querySelector('.x');
@@ -389,8 +429,9 @@
     const g = H.game, now = performance.now();
     if (m.t === 'hello') {
       const t = addTeam(m.id);
+      if (t.online && t.conn === c) { ref.t = t; t.lastFrameAt = now; sendMode(t); applySens(t); return; }   // an app repeating its hello
       if (t.conn && t.conn !== c && t.conn.open) t.conn.close();
-      t.conn = c; t.online = true; ref.t = t; t.lr = null; t.lw = null; t.lastFrameAt = now; t.hidden = false;
+      t.conn = c; t.online = true; ref.t = t; t.lr = null; t.lw = null; t.lastFrameAt = now; t.hidden = false; t.kind = m.app ? 'app' : 'web';
       t.send = x => { if (c.open) c.send(x); };
       sendMode(t); applySens(t); renderPhones(); beep(660, 80);
       return;
@@ -434,6 +475,7 @@
   function checkSleep(now) {
     let changed = false;
     H.teams.forEach(t => {
+      if (t.kind === 'app' && t.online && t.lastFrameAt && now - t.lastFrameAt > 15000) { t.online = false; t.send = null; changed = true; }   // an app has no connection-closed event
       const was = !!t.asleep;
       t.asleep = !!(t.online && (t.hidden || (t.lastFrameAt && now - t.lastFrameAt > 2500)));
       if (t.asleep === was) return;
@@ -849,14 +891,17 @@
     });
     paint(); setInterval(logic, 50);
 
-    const newId = () => 'mg-' + Math.random().toString(36).slice(2, 8);
+    const newId = () => 'mg-' + newCode();
+    $('newGameBtn').onclick = () => {
+      if (confirm('Start a brand-new game with a new code? Phones already connected will have to join the new code.')) { lsSet('mgHost', ''); location.reload(); }
+    };
     function open(id) {
-      lsSet('mgHost', id);
-      const peer = new Peer(id);
+      lsSet('mgHost', id);                                  // the same browser keeps its code if the page is reloaded
+      const peer = new Peer(id), code = id.slice(3);
       peer.on('open', () => {
-        const url = `${baseUrl}?join=${id}`, qr = qrcode(0, 'M'); qr.addData(url); qr.make();
+        const url = `${baseUrl}?join=${code}`, qr = qrcode(0, 'M'); qr.addData(url); qr.make();
         $('qr').innerHTML = qr.createSvgTag({ cellSize: 6, margin: 0, scalable: true });
-        $('link').textContent = url; $('qrBox').classList.remove('hidden');
+        $('link').textContent = baseUrl.replace(/index\.html$/, '').replace(/^https?:\/\//, ''); $('qrBox').classList.remove('hidden'); $('codeBig').textContent = code; openMqtt(id);
       });
       peer.on('connection', c => {
         const ref = { t: null };
@@ -869,8 +914,31 @@
         else { $('conn').textContent = 'Link error: ' + e.type; $('conn').className = 'err'; }
       });
     }
-    open(lsGet('mgHost') || newId());
+    const stored = lsGet('mgHost');
+    open(/^mg-[A-HJ-NP-Z2-9]{6}$/.test(stored || '') ? stored : newId());
+
+    /* Android-app phones talk through a public MQTT broker (a browser can't accept their connections directly).
+       Same JSON messages as the web phones; one shared "up" topic in, one "dn" topic per phone out. */
+    let mq = null;
+    function openMqtt(id) {
+      if (typeof mqtt === 'undefined' || (mq && mq.id === id)) return;
+      if (mq) { mq.cl.end(true); clearInterval(mq.timer); }
+      const base = `motiongames/v1/${id}`, refs = {};
+      const cl = mqtt.connect('wss://broker.hivemq.com:8884/mqtt', { clientId: 'mgh-' + Math.random().toString(16).slice(2, 10), reconnectPeriod: 3000, keepalive: 30 });
+      const who = () => { if (cl.connected) cl.publish(`${base}/all`, JSON.stringify({ t: 'who' })); };   // "any app phones out there? say hello"
+      cl.on('connect', () => { cl.subscribe(`${base}/up`); who(); });
+      mq = { id, cl, timer: setInterval(who, 10000) };
+      cl.on('message', (_topic, buf) => {
+        let m; try { m = JSON.parse(buf.toString()); } catch (_) { return; }
+        if (!m || !m.d) return;
+        const ref = refs[m.d] || (refs[m.d] = { t: null, c: { open: true, close() {}, send: x => { if (cl.connected) cl.publish(`${base}/dn/${m.d}`, JSON.stringify(x)); } } });
+        if (m.t === 'bye') { if (ref.t) { ref.t.online = false; ref.t.send = null; renderPhones(); } return; }
+        if (m.t === 'hello') m.id = m.d;
+        onPhoneData(ref.c, ref, m);
+      });
+      cl.on('error', () => {});
+    }
   }
 
-  if (joinId) runPhone(joinId); else runHost();
+  if (asPhone) runPhone(joinPrefill); else runHost();
 })();
