@@ -23,49 +23,64 @@
   .muted { color: var(--muted); font-size: .9rem; }
   .err { color: #ff8a8a; }
   .hidden { display: none !important; }
-  .num { font-variant-numeric: tabular-nums; }
+  .cap { color: var(--muted); font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; }
 
   /* picker */
   .picker { display: grid; gap: 12px; }
   .picker button { text-align: left; padding: 16px; width: 100%; }
   .picker button small { display: block; font-weight: 400; opacity: .75; margin-top: 2px; }
 
-  /* game layout */
+  /* layout */
   #game { display: grid; gap: 12px; grid-template-columns: 1fr; }
-  @media (min-width: 900px) { #game { grid-template-columns: 1.4fr 1fr; align-items: start; } }
-  #scoreCard { text-align: center; border-width: 2px; transition: border-color .1s, background .1s; }
-  #scoreCard.flash { border-color: var(--good); background: #1b2a22; }
-  #scoreCard.ignored { border-color: var(--muted); }
-  #count { font-size: clamp(5rem, 22vw, 11rem); font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
-  .cap { color: var(--muted); font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; }
-  #timer { font-size: clamp(2.4rem, 9vw, 4.5rem); font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 8px; }
-  #pill { display: inline-block; padding: 2px 12px; border-radius: 99px; background: #262b36; font-size: .8rem; margin-top: 6px; }
+  @media (min-width: 1000px) { #game { grid-template-columns: 1fr 320px; align-items: start; } }
+
+  /* clock */
+  #clock { text-align: center; }
+  #timer { font-size: clamp(3rem, 12vw, 6rem); font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.05; }
+  #pill { display: inline-block; padding: 2px 12px; border-radius: 99px; background: #262b36; font-size: .85rem; }
   #pill.running { background: #1d3b2a; color: var(--good); }
   #pill.armed { background: #3b3216; color: var(--accent); }
   #pill.finished { background: #3b1d1d; color: var(--bad); }
-  .btns { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; margin-top: 14px; }
+  #banner { font-size: 1.4rem; font-weight: 800; margin-top: 10px; color: var(--accent); }
+  .btns { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; margin-top: 12px; max-width: 460px; margin-inline: auto; }
   .btns button { padding: 16px; font-size: 1.1rem; }
-  .settings { display: grid; gap: 12px; }
+
+  /* teams */
+  #teams { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); }
+  .team { background: var(--card); border: 2px solid var(--line); border-top: 6px solid var(--tc); border-radius: 14px; padding: 12px; transition: background .1s; }
+  .team.flash { background: #1f2630; }
+  .team.win { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
+  .team.off { opacity: .55; }
+  .thead { display: flex; gap: 8px; align-items: center; }
+  .tname { flex: 1; min-width: 0; font: inherit; font-weight: 700; font-size: 1.1rem; background: transparent; color: var(--tc); border: 0; border-bottom: 1px dashed var(--line); padding: 2px 0; }
+  .tstat { font-size: .75rem; color: var(--muted); }
+  .tstat.on { color: var(--good); }
+  .x { background: transparent; color: var(--muted); padding: 2px 8px; font-size: 1.2rem; }
+  .tcount { font-size: clamp(4rem, 12vw, 7rem); font-weight: 800; line-height: 1.05; text-align: center; font-variant-numeric: tabular-nums; }
+  .team canvas { width: 100%; height: 70px; display: block; }
+  .tmeta { font-size: .85rem; color: var(--muted); margin: 4px 0 6px; }
+  .team label { display: block; font-size: .8rem; color: var(--muted); }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  #noTeams { text-align: center; color: var(--muted); padding: 30px 10px; border: 2px dashed var(--line); border-radius: 14px; }
+
+  /* side column */
   .field label { display: block; font-size: .8rem; color: var(--muted); margin-bottom: 4px; }
+  .settings { display: grid; gap: 12px; }
   .time { display: flex; gap: 8px; align-items: center; }
   input[type=number] { width: 80px; font: inherit; font-size: 1.2rem; padding: 8px; border-radius: 8px; border: 1px solid var(--line); background: #0f1115; color: var(--text); }
-  input[type=range] { width: 100%; accent-color: var(--accent); }
   .chk { display: flex; gap: 8px; align-items: center; font-size: .95rem; }
-  canvas { width: 100%; height: 130px; display: block; }
-  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; margin-top: 4px; }
-  .stats .v { font-size: 1.3rem; font-weight: 700; font-variant-numeric: tabular-nums; }
-  #log { list-style: none; padding: 0; margin: 0; max-height: 220px; overflow: auto; font-variant-numeric: tabular-nums; }
-  #log li { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: .95rem; }
   #qrBox { text-align: center; }
   #qr { width: min(60vw, 220px); margin: 6px auto; background: #fff; padding: 6px; border-radius: 8px; }
   #qr svg { width: 100%; height: auto; display: block; }
   #link { word-break: break-all; font-size: .75rem; }
-  #conn { font-weight: 600; }
-  #conn.ok { color: var(--good); }
+  #feed { list-style: none; padding: 0; margin: 0; max-height: 240px; overflow: auto; font-variant-numeric: tabular-nums; }
+  #feed li { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--line); font-size: .9rem; }
 
-  /* sensor (phone) view */
+  /* phone (sensor) view */
   #sensorView { text-align: center; }
-  #sGauge { font-size: 3.5rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+  #sTeam { font-size: 1.6rem; font-weight: 800; }
+  #sCount { font-size: 5rem; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  #sGauge { font-size: 2.4rem; font-weight: 800; font-variant-numeric: tabular-nums; }
 </style>
 </head>
 <body>
@@ -74,55 +89,50 @@
 
 <!-- 1. choose a role -->
 <div id="picker" class="picker hidden">
-  <button id="pickDisplay">PC display<small>Show the score on this screen. The phone, inside the ball, is the sensor.</small></button>
-  <button id="pickSolo" class="alt">Play on this phone<small>Everything on one device — handy for testing the sensitivity.</small></button>
+  <button id="pickDisplay">PC display<small>Run the clock and scoreboard here. Each phone in a ball joins as its own team.</small></button>
+  <button id="pickSolo" class="alt">Play on this phone<small>One team, everything on one device — handy for testing the sensitivity.</small></button>
 </div>
 
-<!-- 2. phone acting as the sensor -->
+<!-- 2. a phone acting as a sensor -->
 <div id="sensorView" class="hidden">
   <div class="card">
     <button id="sStart" style="width:100%">Start sensor</button>
     <div id="sMsg" class="muted" style="margin-top:10px">Tap to start, then put the phone in the ball. Keep this screen on and the browser in front.</div>
   </div>
   <div class="card hidden" id="sLive">
-    <div class="cap">Link to display</div>
-    <div id="sConn" style="font-weight:600;margin-bottom:10px">Connecting…</div>
-    <div class="cap">Force now</div>
+    <div id="sTeam">Joining…</div>
+    <div id="sConn" style="font-weight:600;margin-bottom:6px">Connecting…</div>
+    <div id="sCount">0</div>
+    <div class="muted"><span id="sState">–</span></div>
+    <div style="margin-top:14px" class="cap">Force now (1 g = resting)</div>
     <div id="sGauge">–</div>
-    <div class="muted">g (1 g = resting)</div>
-    <div style="margin-top:12px"><span id="sState" class="muted">idle</span> · count <b id="sCount">0</b></div>
   </div>
 </div>
 
-<!-- 3. the game (PC display, or solo on the phone) -->
+<!-- 3. the scoreboard (PC display, or solo on a phone) -->
 <div id="game" class="hidden">
   <div>
-    <div class="card" id="scoreCard">
-      <div class="cap">Bounces</div>
-      <div id="count">0</div>
+    <div class="card" id="clock">
       <div id="timer">1:00.0</div>
-      <span id="pill">idle</span>
+      <span id="pill">ready</span>
+      <div id="banner" class="hidden"></div>
       <div class="btns">
         <button id="startBtn">Start</button>
         <button id="resetBtn" class="alt">Reset</button>
       </div>
       <div class="muted" style="margin-top:8px">Space = start/stop · R = reset</div>
     </div>
-
-    <div class="card">
-      <h2>Impact force (g)</h2>
-      <canvas id="graph"></canvas>
-      <div class="muted" id="lastHit" style="margin-top:6px">No hits yet. The dashed line is the trigger level.</div>
-    </div>
+    <div id="teams"></div>
+    <div id="noTeams">No phones yet. Scan the QR code with each phone — each one becomes its own team.</div>
   </div>
 
   <div>
-    <div class="card hidden" id="linkCard">
-      <h2>Phone link</h2>
-      <div id="conn">Starting…</div>
+    <div class="card" id="linkCard">
+      <h2>Add a phone</h2>
+      <div id="conn" class="muted">Starting…</div>
       <div id="qrBox" class="hidden">
         <div id="qr"></div>
-        <div class="muted">Scan with the phone, tap <b>Start sensor</b>, then put it in the ball.</div>
+        <div class="muted">Scan with each phone, tap <b>Start sensor</b>, then put it in the ball.</div>
         <div id="link" class="muted"></div>
       </div>
     </div>
@@ -131,24 +141,14 @@
       <h2>Timer</h2>
       <div class="settings">
         <div class="field">
-          <label>Count bounces for (0:00 = no limit)</label>
+          <label>Everyone counts for (0:00 = no limit)</label>
           <div class="time">
             <input type="number" id="min" min="0" max="99" value="1" inputmode="numeric"> <span class="muted">min</span>
             <input type="number" id="sec" min="0" max="59" value="0" inputmode="numeric"> <span class="muted">sec</span>
           </div>
         </div>
-        <label class="chk"><input type="checkbox" id="onFirst"> Start the clock on the first bounce</label>
-        <label class="chk"><input type="checkbox" id="sound" checked> Sound</label>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>Sensitivity</h2>
-      <div class="settings">
-        <div class="field">
-          <label>Trigger at <b id="thrV">2.5</b> g — lower is more sensitive</label>
-          <input type="range" id="thr" min="1.3" max="8" step="0.1" value="2.5">
-        </div>
+        <label class="chk"><input type="checkbox" id="onFirst"> Start the clock on the first bounce (any team)</label>
+        <label class="chk"><input type="checkbox" id="sound" checked> Sound (each team has its own pitch)</label>
         <div class="field">
           <label>Ignore repeat hits within <b id="gapV">200</b> ms</label>
           <input type="range" id="gap" min="80" max="1000" step="20" value="200">
@@ -157,13 +157,8 @@
     </div>
 
     <div class="card">
-      <h2>This run</h2>
-      <div class="stats">
-        <div><div class="v" id="stMax">–</div><div class="cap">Max g</div></div>
-        <div><div class="v" id="stAvg">–</div><div class="cap">Avg gap</div></div>
-        <div><div class="v" id="stRate">–</div><div class="cap">Per min</div></div>
-      </div>
-      <ul id="log" style="margin-top:10px"></ul>
+      <h2>Recent bounces</h2>
+      <ul id="feed"></ul>
     </div>
   </div>
 </div>
@@ -174,45 +169,18 @@
 (() => {
   const $ = id => document.getElementById(id);
   const G = 9.81;
-  const joinId = new URLSearchParams(location.search).get('join');
+  const params = new URLSearchParams(location.search);
+  const joinId = params.get('join');
   const baseUrl = location.href.split(/[?#]/)[0];
+  const COLORS = ['#ff6b6b', '#5aa8ff', '#4cd37b', '#ffb547', '#c084fc', '#2dd4bf', '#f472b6', '#a3e635'];
 
-  /* ================= Bounce engine (runs where the sensor is) ================= */
-  class Engine {
-    constructor(emit) {
-      this.emit = emit;
-      this.cfg = { thr: 2.5, gap: 200, dur: 60000, onFirst: false };
-      this.mag = 1; this.bucket = 0; this.lastEmit = 0;
-      this.reset();
+  /* ================= Hit detector (runs on whichever device has the sensor) ================= */
+  class Detector {
+    constructor(onHit) {
+      this.onHit = onHit; this.cfg = { thr: 2.5, gap: 200 };
+      this.mag = 1; this.bucket = 0; this.pending = null; this.rearm = true; this.lastHit = -1e9;
     }
-    reset() {
-      this.state = 'idle'; this.count = 0; this.maxG = 0;
-      this.startAt = 0; this.endAt = Infinity; this.el = 0; this.runDur = this.cfg.dur;
-      this.lastHit = -1e9; this.pending = null; this.rearm = true;
-    }
-    cmd(m) {
-      if (m.t === 'cfg') Object.assign(this.cfg, m.cfg);
-      else if (m.t === 'start') this.start();
-      else if (m.t === 'stop') this.stop();
-      else if (m.t === 'reset') this.reset();
-      this.snap(performance.now());
-    }
-    start() {
-      if (this.state === 'running' || this.state === 'armed') return;
-      this.count = 0; this.maxG = 0; this.el = 0; this.pending = null;
-      if (this.cfg.onFirst) { this.state = 'armed'; this.runDur = this.cfg.dur; }
-      else this.begin(performance.now());
-    }
-    begin(t) {
-      this.state = 'running'; this.startAt = t; this.runDur = this.cfg.dur;
-      this.endAt = this.cfg.dur > 0 ? t + this.cfg.dur : Infinity;
-    }
-    stop() {
-      const now = performance.now();
-      if (this.state === 'running') { this.el = now - this.startAt; this.state = 'finished'; this.emit({ t: 'end', n: this.count }); }
-      else if (this.state === 'armed') this.state = 'idle';
-    }
-    // g = total force incl. gravity, in units of g. Rotation-proof: only the size matters, not the direction.
+    // g = total force incl. gravity in units of g. Rotation-proof: only its size matters, not its direction.
     feed(g, now) {
       this.mag = g; if (g > this.bucket) this.bucket = g;
       const c = this.cfg;
@@ -225,74 +193,64 @@
         this.pending = { t0: now, peak: g }; this.rearm = false; this.lastHit = now;
       }
     }
-    commit() {
-      const p = this.pending; this.pending = null;
-      if (this.state === 'armed') this.begin(p.t0);
-      let counted = false;
-      if (this.state === 'running' && p.t0 <= this.endAt) {
-        this.count++; counted = true;
-        if (p.peak > this.maxG) this.maxG = p.peak;
-      }
-      this.emit({ t: 'hit', n: this.count, g: p.peak, c: counted, at: counted ? p.t0 - this.startAt : 0 });
-    }
-    tick(now) {
-      if (this.pending && now - this.pending.t0 >= 40) this.commit();
-      if (this.state === 'running' && now >= this.endAt) {
-        this.state = 'finished'; this.el = this.runDur; this.emit({ t: 'end', n: this.count });
-      }
-      if (now - this.lastEmit >= 50) this.snap(now);
-    }
-    snap(now) {
-      this.lastEmit = now;
-      const el = this.state === 'running' ? now - this.startAt : (this.state === 'finished' ? this.el : 0);
-      const d = (this.state === 'running' || this.state === 'finished') ? this.runDur : this.cfg.dur;
-      this.emit({ t: 's', st: this.state, n: this.count, el, d, g: this.bucket, mx: this.maxG });
-      this.bucket = this.mag;
-    }
+    commit() { const p = this.pending; this.pending = null; this.onHit(p.peak); }
+    tick(now) { if (this.pending && now - this.pending.t0 >= 40) this.commit(); }
+    take() { const b = this.bucket; this.bucket = this.mag; return b; }   // peak since last call
   }
 
   /* ================= sensors ================= */
-  let engine = null, sensing = false, wake = null;
+  let det = null, sensing = false;
   async function startSensing() {
     if (!window.isSecureContext) throw new Error('Sensors need HTTPS.');
-    for (const E of [window.DeviceMotionEvent]) {
-      if (E && typeof E.requestPermission === 'function') {
-        if (await E.requestPermission() !== 'granted') throw new Error('Motion permission was denied.');
-      }
-    }
+    const E = window.DeviceMotionEvent;
+    if (E && typeof E.requestPermission === 'function' && await E.requestPermission() !== 'granted')
+      throw new Error('Motion permission was denied.');
     window.addEventListener('devicemotion', e => {
       const a = e.accelerationIncludingGravity;
-      if (!a || a.x == null || !engine) return;
+      if (!a || a.x == null || !det) return;
       sensing = true;
-      engine.feed(Math.hypot(a.x, a.y, a.z) / G, performance.now());
+      det.feed(Math.hypot(a.x, a.y, a.z) / G, performance.now());
     });
-    setInterval(() => engine && engine.tick(performance.now()), 20);
+    setInterval(() => det && det.tick(performance.now()), 20);
     getWake();
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') getWake(); });
     await new Promise(r => setTimeout(r, 1500));
     if (!sensing) throw new Error('No motion data. Use a phone and allow Motion sensors in Chrome site settings.');
   }
-  async function getWake() { try { if ('wakeLock' in navigator) wake = await navigator.wakeLock.request('screen'); } catch (_) {} }
+  async function getWake() { try { if ('wakeLock' in navigator) await navigator.wakeLock.request('screen'); } catch (_) {} }
 
-  /* ================= phone as sensor ================= */
+  /* ================= phone as a sensor ================= */
   function runSensor(id) {
     $('sensorView').classList.remove('hidden');
+    let devId = params.get('dev');
+    if (!devId) {
+      try { devId = localStorage.getItem('bounceDev'); } catch (_) {}
+      if (!devId) { devId = Math.random().toString(36).slice(2, 10); try { localStorage.setItem('bounceDev', devId); } catch (_) {} }
+    }
     let peer, conn, retry = false;
     const setConn = (txt, ok) => { $('sConn').textContent = txt; $('sConn').style.color = ok ? 'var(--good)' : 'var(--accent)'; };
+    const sendNow = m => { if (conn && conn.open) conn.send(m); };
 
-    engine = new Engine(msg => {
-      if (conn && conn.open) conn.send(msg);
-      if (msg.t === 's') {
-        $('sGauge').textContent = msg.g.toFixed(1);
-        $('sState').textContent = msg.st; $('sCount').textContent = msg.n;
+    det = new Detector(g => sendNow({ t: 'hit', g }));
+    setInterval(() => {                       // stream the live force to the display and our own gauge
+      const g = det.take();
+      $('sGauge').textContent = g.toFixed(1);
+      sendNow({ t: 'g', g });
+    }, 50);
+
+    function onData(m) {
+      if (m.t === 'cfg') Object.assign(det.cfg, m.cfg);
+      else if (m.t === 'info') {
+        $('sTeam').textContent = m.name; $('sTeam').style.color = m.color;
+        $('sCount').textContent = m.n;
+        $('sState').textContent = { idle: 'ready', armed: 'waiting for first bounce', running: 'counting', finished: 'finished' }[m.st] || m.st;
       }
-    });
-
+    }
     function connect() {
       retry = false;
       conn = peer.connect(id, { reliable: true });
-      conn.on('open', () => setConn('Connected to display ✓', true));
-      conn.on('data', m => engine.cmd(m));
+      conn.on('open', () => { setConn('Connected to display ✓', true); conn.send({ t: 'hello', id: devId }); });
+      conn.on('data', onData);
       const lost = () => { setConn('Reconnecting…', false); if (!retry) { retry = true; setTimeout(connect, 2000); } };
       conn.on('close', lost); conn.on('error', lost);
     }
@@ -301,7 +259,7 @@
       $('sMsg').className = 'muted'; $('sMsg').textContent = 'Starting…';
       try { await startSensing(); } catch (e) { $('sMsg').className = 'err'; $('sMsg').textContent = e.message; return; }
       $('sStart').classList.add('hidden');
-      $('sMsg').textContent = 'Sensor running. Put the phone in the ball — control it from the display.';
+      $('sMsg').textContent = 'Sensor running. Put the phone in the ball — the display controls everything.';
       $('sLive').classList.remove('hidden');
       peer = new Peer();
       peer.on('open', connect);
@@ -313,10 +271,17 @@
     });
   }
 
-  /* ================= display UI (PC, or solo on a phone) ================= */
-  let send = () => {}, linked = false, mode = '';
-  const log = [], hist = [];
-  let last = null, audio = null;
+  /* ================= scoreboard (PC, or solo on a phone) ================= */
+  const teams = [];
+  const game = { state: 'idle', startAt: 0, endAt: Infinity, dur: 0, el: 0 };
+  const feed = [];
+  let audio = null, mode = '';
+
+  const saved = (() => { try { return JSON.parse(localStorage.getItem('bounceTeams')) || {}; } catch (_) { return {}; } })();
+  const saveNames = () => {
+    const o = {}; teams.forEach(t => { o[t.id] = { name: t.name, color: t.color }; });
+    try { localStorage.setItem('bounceTeams', JSON.stringify(o)); } catch (_) {};
+  };
 
   function beep(freq, ms, vol = 0.15) {
     if (!$('sound').checked) return;
@@ -330,129 +295,191 @@
     } catch (_) {}
   }
 
-  const cfgFromUi = () => ({
-    thr: +$('thr').value, gap: +$('gap').value,
-    dur: ((+$('min').value || 0) * 60 + (+$('sec').value || 0)) * 1000,
-    onFirst: $('onFirst').checked
-  });
-  const pushCfg = () => {
-    $('thrV').textContent = (+$('thr').value).toFixed(1);
-    $('gapV').textContent = $('gap').value;
-    send({ t: 'cfg', cfg: cfgFromUi() });
-    if (!last || last.st === 'idle') showTimer(null);
-  };
-  ['thr', 'gap', 'min', 'sec', 'onFirst'].forEach(id => $(id).addEventListener('input', pushCfg));
-
-  function fmt(ms, up) {
+  const cfgDur = () => ((+$('min').value || 0) * 60 + (+$('sec').value || 0)) * 1000;
+  const fmt = (ms, up) => {
     const t = up ? Math.floor(ms / 100) : Math.ceil(ms / 100);
     return `${Math.floor(t / 600)}:${String(Math.floor(t / 10) % 60).padStart(2, '0')}.${t % 10}`;
+  };
+  const elapsed = now => game.state === 'running' ? now - game.startAt : (game.state === 'finished' ? game.el : 0);
+
+  /* ---- teams ---- */
+  function addTeam(id, send) {
+    let t = teams.find(x => x.id === id);
+    if (t) { t.send = send; return t; }
+    const s = saved[id], i = teams.length;
+    t = {
+      id, send, online: true, i,
+      name: s ? s.name : 'Team ' + (i + 1), color: s ? s.color : COLORS[i % COLORS.length],
+      count: 0, maxG: 0, last: null, thr: 2.5, hist: [], conn: null
+    };
+    teams.push(t); buildCard(t); saveNames();
+    $('noTeams').classList.add('hidden');
+    $('startBtn').disabled = false;
+    return t;
   }
-  function showTimer(s) {
-    const d = s ? s.d : cfgFromUi().dur, el = s ? s.el : 0;
-    $('timer').textContent = d > 0 ? fmt(Math.max(0, d - el), false) : fmt(el, true);
+  function pushCfg(t) { t.send({ t: 'cfg', cfg: { thr: t.thr, gap: +$('gap').value } }); }
+  function pushInfo(t) { t.send({ t: 'info', name: t.name, color: t.color, n: t.count, st: game.state }); }
+  const pushAll = () => teams.forEach(t => t.online && pushInfo(t));
+
+  function buildCard(t) {
+    const d = document.createElement('div');
+    d.className = 'team'; d.style.setProperty('--tc', t.color);
+    d.innerHTML = `
+      <div class="thead"><input class="tname" maxlength="20" aria-label="Team name"><span class="tstat"></span><button class="x" title="Remove team">×</button></div>
+      <div class="tcount">0</div>
+      <canvas></canvas>
+      <div class="tmeta">Max <b class="max">–</b> g · last <span class="last">–</span></div>
+      <label>Trigger at <b class="thrv">2.5</b> g — lower is more sensitive <input type="range" class="thr" min="1.3" max="8" step="0.1" value="2.5"></label>`;
+    t.el = d;
+    t.q = s => d.querySelector(s);
+    t.q('.tname').value = t.name;
+    t.q('.tname').addEventListener('input', e => { t.name = e.target.value; saveNames(); pushInfo(t); });
+    t.q('.thr').addEventListener('input', e => { t.thr = +e.target.value; t.q('.thrv').textContent = t.thr.toFixed(1); pushCfg(t); });
+    t.q('.x').addEventListener('click', () => {
+      if (t.online && mode === 'display') return;                       // only remove teams that are offline
+      teams.splice(teams.indexOf(t), 1); d.remove(); saveNames();
+      if (!teams.length) { $('noTeams').classList.remove('hidden'); $('startBtn').disabled = true; }
+    });
+    t.canvas = t.q('canvas'); t.ctx = t.canvas.getContext('2d');
+    $('teams').appendChild(d);
   }
 
-  function onMsg(m) {
-    if (m.t === 's') {
-      last = m;
-      $('count').textContent = m.n;
-      $('pill').textContent = { idle: 'ready', armed: 'waiting for first bounce', running: 'counting', finished: m.d > 0 && m.el >= m.d ? "time's up" : 'stopped' }[m.st];
-      $('pill').className = m.st;
-      $('startBtn').textContent = (m.st === 'running' || m.st === 'armed') ? 'Stop' : 'Start';
-      $('startBtn').className = (m.st === 'running' || m.st === 'armed') ? 'stop' : '';
-      showTimer(m);
-      $('stMax').textContent = m.mx ? m.mx.toFixed(1) : '–';
-      const run = m.el > 0 ? m.n / (m.el / 60000) : 0;
-      $('stRate').textContent = m.n > 0 && m.el > 2000 ? run.toFixed(0) : '–';
-      hist.push({ t: performance.now(), g: m.g });
-    } else if (m.t === 'hit') {
-      $('lastHit').textContent = `Last hit ${m.g.toFixed(1)} g — ${m.c ? 'counted' : 'not counted (timer not running)'}`;
-      const card = $('scoreCard');
-      card.classList.add(m.c ? 'flash' : 'ignored');
-      setTimeout(() => card.classList.remove('flash', 'ignored'), 150);
-      if (m.c) {
-        beep(880, 90);
-        log.unshift({ n: m.n, at: m.at, g: m.g });
-        if (log.length > 50) log.pop();
-        renderLog();
-      }
-    } else if (m.t === 'end') {
-      beep(440, 500, 0.25);
+  /* ---- game flow ---- */
+  function startGame() {
+    if (game.state === 'running' || game.state === 'armed') return;
+    teams.forEach(t => { t.count = 0; t.maxG = 0; t.last = null; });
+    feed.length = 0; renderFeed(); $('banner').classList.add('hidden');
+    teams.forEach(t => t.el.classList.remove('win'));
+    game.dur = cfgDur();
+    if ($('onFirst').checked) game.state = 'armed'; else begin(performance.now());
+    pushAll();
+  }
+  function begin(now) {
+    game.state = 'running'; game.startAt = now;
+    game.endAt = game.dur > 0 ? now + game.dur : Infinity;
+  }
+  function finish(timeUp) {
+    const now = performance.now();
+    game.el = timeUp ? game.dur : now - game.startAt;
+    game.state = 'finished';
+    beep(440, 600, 0.25);
+    const top = Math.max(0, ...teams.map(t => t.count));
+    const win = teams.filter(t => t.count === top && top > 0);
+    let txt = timeUp ? "Time's up!" : 'Stopped.';
+    if (teams.length === 1) txt += ` ${top} bounce${top === 1 ? '' : 's'}.`;
+    else if (win.length === 1) txt = `🏆 ${win[0].name} wins with ${top}!`;
+    else if (win.length > 1) txt = `🤝 Tie: ${win.map(t => t.name).join(' & ')} on ${top}`;
+    $('banner').textContent = txt; $('banner').classList.remove('hidden');
+    if (teams.length > 1) win.forEach(t => t.el.classList.add('win'));
+    pushAll();
+  }
+  function stopGame() {
+    if (game.state === 'running') finish(false);
+    else if (game.state === 'armed') { game.state = 'idle'; pushAll(); }
+  }
+  function resetGame() {
+    game.state = 'idle'; game.el = 0;
+    teams.forEach(t => { t.count = 0; t.maxG = 0; t.last = null; t.el.classList.remove('win'); });
+    feed.length = 0; renderFeed(); $('banner').classList.add('hidden');
+    pushAll();
+  }
+
+  function onHit(t, g) {
+    const now = performance.now();
+    if (game.state === 'armed') begin(now);
+    const counted = game.state === 'running' && now <= game.endAt;
+    t.last = { g, c: counted };
+    t.el.classList.add('flash'); setTimeout(() => t.el.classList.remove('flash'), 120);
+    if (counted) {
+      t.count++; if (g > t.maxG) t.maxG = g;
+      feed.unshift({ t, n: t.count, at: now - game.startAt, g });
+      if (feed.length > 40) feed.pop();
+      renderFeed(); beep(500 + t.i * 110, 90); pushInfo(t);
     }
   }
-  function renderLog() {
-    $('log').innerHTML = log.slice(0, 12).map(e =>
-      `<li><span>#${e.n}</span><span class="muted">${fmt(e.at, true)}</span><span>${e.g.toFixed(1)} g</span></li>`).join('');
-    const n = log.length;
-    $('stAvg').textContent = n > 1 ? ((log[0].at - log[n - 1].at) / (n - 1) / 1000).toFixed(2) + ' s' : '–';
+  function renderFeed() {
+    $('feed').innerHTML = feed.slice(0, 14).map(e =>
+      `<li><span style="color:${e.t.color};font-weight:700">${e.t.name.replace(/</g, '&lt;')} #${e.n}</span><span class="muted">${fmt(e.at, true)}</span><span>${e.g.toFixed(1)} g</span></li>`).join('');
   }
-  function resetUi() { log.length = 0; hist.length = 0; renderLog(); $('lastHit').textContent = 'No hits yet. The dashed line is the trigger level.'; }
 
+  /* ---- controls ---- */
   $('startBtn').addEventListener('click', () => {
-    if (last && (last.st === 'running' || last.st === 'armed')) send({ t: 'stop' });
-    else { resetUi(); pushCfg(); send({ t: 'start' }); }
+    if (game.state === 'running' || game.state === 'armed') stopGame(); else startGame();
   });
-  $('resetBtn').addEventListener('click', () => { resetUi(); send({ t: 'reset' }); });
+  $('resetBtn').addEventListener('click', resetGame);
+  $('gap').addEventListener('input', () => { $('gapV').textContent = $('gap').value; teams.forEach(pushCfg); });
   document.addEventListener('keydown', e => {
-    if (!$('game') || $('game').classList.contains('hidden') || /INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
+    if ($('game').classList.contains('hidden') || /INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
     if (e.code === 'Space') { e.preventDefault(); $('startBtn').click(); }
     if (e.key === 'r' || e.key === 'R') $('resetBtn').click();
   });
 
-  /* ---- graph ---- */
-  const cv = $('graph'), ctx = cv.getContext('2d'), SPAN = 8000;
-  function sizeCanvas() { const r = devicePixelRatio || 1; cv.width = cv.clientWidth * r; cv.height = cv.clientHeight * r; ctx.setTransform(r, 0, 0, r, 0, 0); }
-  addEventListener('resize', sizeCanvas);
-  function draw() {
-    requestAnimationFrame(draw);
-    if ($('game').classList.contains('hidden')) return;
-    if (cv.width === 0) sizeCanvas();
-    const w = cv.clientWidth, h = cv.clientHeight, now = performance.now(), thr = +$('thr').value;
-    while (hist.length && now - hist[0].t > SPAN) hist.shift();
-    const top = Math.max(6, thr * 1.4, ...hist.map(p => p.g));
-    const y = g => h - 14 - (g / top) * (h - 20);
-    ctx.clearRect(0, 0, w, h);
-    ctx.font = '10px system-ui'; ctx.fillStyle = '#8a92a3';
-    ctx.fillText(top.toFixed(0) + ' g', 2, 10); ctx.fillText('0', 2, h - 3);
-    ctx.setLineDash([5, 4]); ctx.strokeStyle = '#ff6b6b'; ctx.beginPath(); ctx.moveTo(0, y(thr)); ctx.lineTo(w, y(thr)); ctx.stroke(); ctx.setLineDash([]);
-    if (hist.length < 2) return;
-    ctx.strokeStyle = '#ffb547'; ctx.lineWidth = 1.5; ctx.beginPath();
-    hist.forEach((p, i) => { const px = w - (now - p.t) / SPAN * w; i ? ctx.lineTo(px, y(p.g)) : ctx.moveTo(px, y(p.g)); });
-    ctx.stroke(); ctx.lineWidth = 1;
+  /* ---- render loop ---- */
+  const SPAN = 8000;
+  function drawTeam(t, now) {
+    const c = t.canvas, r = devicePixelRatio || 1, w = c.clientWidth, h = c.clientHeight;
+    if (c.width !== Math.round(w * r)) { c.width = Math.round(w * r); c.height = Math.round(h * r); }
+    const x = t.ctx; x.setTransform(r, 0, 0, r, 0, 0); x.clearRect(0, 0, w, h);
+    while (t.hist.length && now - t.hist[0].t > SPAN) t.hist.shift();
+    const top = Math.max(6, t.thr * 1.4, ...t.hist.map(p => p.g));
+    const y = g => h - 3 - (g / top) * (h - 8);
+    x.setLineDash([4, 4]); x.strokeStyle = '#ff6b6b'; x.beginPath(); x.moveTo(0, y(t.thr)); x.lineTo(w, y(t.thr)); x.stroke(); x.setLineDash([]);
+    if (t.hist.length < 2) return;
+    x.strokeStyle = t.color; x.lineWidth = 1.5; x.beginPath();
+    t.hist.forEach((p, i) => { const px = w - (now - p.t) / SPAN * w; i ? x.lineTo(px, y(p.g)) : x.moveTo(px, y(p.g)); });
+    x.stroke(); x.lineWidth = 1;
+  }
+  function loop() {
+    requestAnimationFrame(loop);
+    const now = performance.now();
+    if (game.state === 'running' && now >= game.endAt) finish(true);
+    const el = elapsed(now), d = (game.state === 'running' || game.state === 'finished') ? game.dur : cfgDur();
+    $('timer').textContent = d > 0 ? fmt(Math.max(0, d - el), false) : fmt(el, true);
+    const st = game.state;
+    $('pill').textContent = { idle: 'ready', armed: 'waiting for the first bounce', running: 'counting', finished: 'finished' }[st];
+    $('pill').className = st;
+    const live = st === 'running' || st === 'armed';
+    $('startBtn').textContent = live ? 'Stop' : 'Start'; $('startBtn').className = live ? 'stop' : '';
+    teams.forEach(t => {
+      t.q('.tcount').textContent = t.count;
+      t.q('.max').textContent = t.maxG ? t.maxG.toFixed(1) : '–';
+      t.q('.last').textContent = t.last ? `${t.last.g.toFixed(1)} g${t.last.c ? '' : ' (not counted)'}` : '–';
+      const s = t.q('.tstat'); s.textContent = mode === 'solo' ? '' : (t.online ? '● online' : '○ offline'); s.className = 'tstat' + (t.online ? ' on' : '');
+      t.el.classList.toggle('off', !t.online);
+      t.q('.x').style.visibility = (t.online && mode === 'display') || mode === 'solo' ? 'hidden' : 'visible';
+      drawTeam(t, now);
+    });
   }
 
   function enterGame() {
     $('picker').classList.add('hidden'); $('game').classList.remove('hidden');
-    sizeCanvas(); draw(); pushCfg();
+    $('startBtn').disabled = true; loop();
   }
 
-  /* ---- solo: this phone does everything ---- */
+  /* ---- solo: this phone is the only team ---- */
   $('pickSolo').addEventListener('click', async () => {
     mode = 'solo';
-    try { engine = new Engine(onMsg); await startSensing(); } catch (e) { alert(e.message); return; }
-    send = m => engine.cmd(m);
+    let t;
+    det = new Detector(g => onHit(t, g));
+    try { await startSensing(); } catch (e) { alert(e.message); return; }
+    $('linkCard').classList.add('hidden');
     enterGame();
+    t = addTeam('solo', m => { if (m.t === 'cfg') Object.assign(det.cfg, m.cfg); });
+    t.name = 'You'; t.q('.tname').value = 'You'; pushCfg(t);
+    setInterval(() => t.hist.push({ t: performance.now(), g: det.take() }), 50);
   });
 
-  /* ---- PC display: phone connects to us ---- */
+  /* ---- PC display: phones connect to us ---- */
   $('pickDisplay').addEventListener('click', () => {
     mode = 'display';
     audio = audio || new (window.AudioContext || window.webkitAudioContext)();   // unlock sound from this click
     let id; try { id = localStorage.getItem('bounceId'); } catch (_) {}
     const newId = () => 'ymb-' + Math.random().toString(36).slice(2, 8);
-    let conn = null;
-    send = m => { if (conn && conn.open) conn.send(m); };
-    $('linkCard').classList.remove('hidden');
     enterGame();
-    ['startBtn', 'resetBtn'].forEach(b => $(b).disabled = true);
+    const setLink = txt => { $('conn').textContent = txt; };
+    const online = () => teams.filter(t => t.online).length;
+    const refreshConn = () => setLink(online() ? `${online()} phone${online() === 1 ? '' : 's'} connected ✓ — scan again to add more` : 'Waiting for phones…');
 
-    const setLinked = ok => {
-      linked = ok;
-      $('conn').textContent = ok ? 'Phone connected ✓' : 'Waiting for the phone…';
-      $('conn').className = ok ? 'ok' : '';
-      $('qrBox').classList.toggle('hidden', ok);
-      ['startBtn', 'resetBtn'].forEach(b => $(b).disabled = !ok);
-    };
     function open(id) {
       try { localStorage.setItem('bounceId', id); } catch (_) {}
       const peer = new Peer(id);
@@ -460,20 +487,28 @@
         const url = `${baseUrl}?join=${id}`;
         const qr = qrcode(0, 'M'); qr.addData(url); qr.make();
         $('qr').innerHTML = qr.createSvgTag({ cellSize: 6, margin: 0, scalable: true });
-        $('link').textContent = url;
-        setLinked(false);
+        $('link').textContent = url; $('qrBox').classList.remove('hidden'); refreshConn();
       });
       peer.on('connection', c => {
-        if (conn && conn.open) conn.close();
-        conn = c;
-        c.on('open', () => { setLinked(true); pushCfg(); });
-        c.on('data', onMsg);
-        c.on('close', () => { if (conn === c) setLinked(false); });
+        let team = null;
+        c.on('data', m => {
+          if (m.t === 'hello') {
+            const old = teams.find(x => x.id === m.id);
+            if (old && old.conn && old.conn !== c && old.conn.open) old.conn.close();   // same phone reconnecting
+            team = addTeam(m.id, x => { if (c.open) c.send(x); });
+            team.send = x => { if (c.open) c.send(x); };
+            team.conn = c; team.online = true;
+            pushCfg(team); pushInfo(team); refreshConn();
+          } else if (!team) return;
+          else if (m.t === 'hit') onHit(team, m.g);
+          else if (m.t === 'g') team.hist.push({ t: performance.now(), g: m.g });
+        });
+        c.on('close', () => { if (team && team.conn === c) { team.online = false; refreshConn(); } });
       });
       peer.on('disconnected', () => peer.reconnect());
       peer.on('error', e => {
         if (e.type === 'unavailable-id') { peer.destroy(); open(newId()); }
-        else { $('conn').textContent = 'Link error: ' + e.type; $('conn').className = 'err'; }
+        else { setLink('Link error: ' + e.type); $('conn').className = 'err'; }
       });
     }
     open(id || newId());
