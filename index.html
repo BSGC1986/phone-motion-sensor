@@ -2,23 +2,183 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0f1115">
 <title>Motion Games</title>
 <style>
-  :root { --bg: #0f1115; --card: #181b22; --line: #2a2f3a; --text: #e8eaf0; --muted: #8a92a3; --accent: #ffb547; }
+  :root {
+    --bg: #0f1115; --card: #181b22; --line: #2a2f3a; --text: #e8eaf0; --muted: #8a92a3;
+    --accent: #ffb547; --good: #4cd37b; --bad: #ff6b6b; --blue: #5aa8ff; --ga: #ffb547;
+  }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.4 system-ui, sans-serif; padding: 16px; max-width: 640px; margin-inline: auto; }
-  h1 { font-size: 1.3rem; margin: 8px 0 16px; }
-  a.card { display: block; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 12px; color: inherit; text-decoration: none; }
-  a.card:active { border-color: var(--accent); }
-  a.card b { font-size: 1.05rem; }
-  a.card span { display: block; color: var(--muted); font-size: .9rem; margin-top: 2px; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.4 system-ui, sans-serif; padding: 16px 16px 32px; }
+  a { color: var(--blue); text-decoration: none; }
+  h1 { font-size: 1.5rem; margin: 6px 0 14px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-bottom: 12px; }
+  .card h2 { font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+  button { font: inherit; font-weight: 600; border: 0; border-radius: 10px; padding: 12px 16px; background: var(--ga); color: #1a1200; cursor: pointer; }
+  button.alt { background: #262b36; color: var(--text); }
+  button.stop { background: var(--bad); color: #200; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  .muted { color: var(--muted); font-size: .9rem; }
+  .err { color: #ff8a8a; }
+  .hidden { display: none !important; }
+
+  /* host layout */
+  #topbar { display: flex; gap: 12px; align-items: baseline; margin-bottom: 4px; }
+  #crumb { font-weight: 700; }
+  #layout { display: grid; gap: 12px; grid-template-columns: 1fr; }
+  @media (min-width: 1000px) { #layout { grid-template-columns: 1fr 330px; align-items: start; } }
+
+  /* home grid */
+  #games { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+  .gcard { display: flex; flex-direction: column; gap: 6px; text-align: left; padding: 18px; min-height: 170px; color: var(--text);
+           background: linear-gradient(145deg, color-mix(in srgb, var(--ga) 30%, #181b22), #181b22 70%);
+           border: 1px solid color-mix(in srgb, var(--ga) 45%, #2a2f3a); border-radius: 16px; font-weight: 400; transition: transform .12s; }
+  .gcard:hover { transform: translateY(-3px); }
+  .gcard b { font-size: 1.15rem; }
+  .gcard span:last-child { color: #c3c9d6; font-size: .9rem; }
+  .gcard.tool { --ga: #6b7280; }
+  .gemoji { font-size: 3rem; line-height: 1; }
+
+  /* clock */
+  #clock { text-align: center; border-top: 5px solid var(--ga); }
+  #clock[data-mood=go] { background: linear-gradient(#173325, var(--card)); }
+  #clock[data-mood=ice] { background: linear-gradient(#10324d, var(--card)); }
+  #timer { font-size: clamp(3rem, 12vw, 6rem); font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.05; }
+  #timer.small { font-size: clamp(2rem, 8vw, 4rem); }
+  #tsubline { color: var(--muted); min-height: 1.3em; }
+  #pill { display: inline-block; padding: 2px 12px; border-radius: 99px; background: #262b36; font-size: .85rem; margin-top: 4px; }
+  #pill.running { background: #1d3b2a; color: var(--good); }
+  #pill.armed { background: #3b3216; color: var(--accent); }
+  #pill.finished { background: #3b1d1d; color: var(--bad); }
+  #banner { font-size: 1.5rem; font-weight: 800; margin-top: 10px; color: var(--ga); }
+  #howto { margin: 8px auto 0; max-width: 620px; }
+  .btns { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; margin: 12px auto 0; max-width: 460px; }
+  .btns button { padding: 16px; font-size: 1.1rem; }
+
+  /* team cards */
+  #teams { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); }
+  .team { background: var(--card); border: 2px solid var(--line); border-top: 6px solid var(--tc); border-radius: 14px; padding: 10px; transition: background .1s; }
+  .team.flash { background: #202733; }
+  .team.win { border-color: var(--ga); box-shadow: 0 0 0 2px var(--ga) inset; }
+  .team.off { opacity: .55; }
+  .thead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+  .tn { font-weight: 800; font-size: 1.15rem; }
+  .ts { font-size: .75rem; color: var(--muted); } .ts.on { color: var(--good); }
+  .arena { width: 100%; height: 150px; display: block; border-radius: 10px; background: #12161d; }
+  .tscore { font-size: clamp(2.6rem, 8vw, 4rem); font-weight: 800; text-align: center; font-variant-numeric: tabular-nums; line-height: 1.15; margin-top: 4px; }
+  .tsub { text-align: center; color: var(--muted); font-size: .85rem; min-height: 1.3em; }
+  .textra { margin-top: 6px; }
+  .textra button { width: 100%; }
+  .sl { display: block; font-size: .8rem; color: var(--muted); }
+  input[type=range] { width: 100%; accent-color: var(--ga); }
+
+  /* side column */
+  .field { margin-bottom: 12px; } .field:last-child { margin-bottom: 0; }
+  .field label { display: block; font-size: .85rem; color: var(--muted); margin-bottom: 4px; }
+  label.chk { display: flex; gap: 8px; align-items: center; color: var(--text); font-size: .95rem; }
+  .time { display: flex; gap: 8px; align-items: center; }
+  input[type=number] { width: 80px; font: inherit; font-size: 1.1rem; padding: 8px; border-radius: 8px; border: 1px solid var(--line); background: #0f1115; color: var(--text); }
+  #qrBox { text-align: center; margin-bottom: 10px; }
+  #qr { width: min(60vw, 190px); margin: 6px auto; background: #fff; padding: 6px; border-radius: 8px; }
+  #qr svg { width: 100%; height: auto; display: block; }
+  #link { word-break: break-all; font-size: .7rem; }
+  #conn { font-weight: 600; margin-bottom: 8px; }
+  .prow { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+  .prow input { flex: 1; min-width: 0; font: inherit; background: #0f1115; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
+  .pst { font-size: .75rem; color: var(--muted); } .pst.on { color: var(--good); }
+  .x { background: transparent; color: var(--muted); padding: 2px 8px; font-size: 1.2rem; }
+  #feed { list-style: none; padding: 0; margin: 0; max-height: 260px; overflow: auto; }
+  #feed li { padding: 5px 0; border-bottom: 1px solid var(--line); font-size: .9rem; }
+
+  /* phone */
+  #phone { max-width: 520px; margin: 0 auto; }
+  #pBox { text-align: center; border-radius: 18px; padding: 18px; border: 2px solid var(--ga); background: var(--card); transition: background .15s; }
+  #pGame { font-weight: 700; color: var(--ga); }
+  #pTeam { font-size: 1.8rem; font-weight: 800; margin-top: 4px; }
+  #pBig { font-size: clamp(3.5rem, 22vw, 7rem); font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; min-height: 1.1em; }
+  #pSub { color: #c3c9d6; min-height: 1.4em; }
+  #pMeter { height: 14px; border-radius: 7px; background: #262b36; overflow: hidden; margin: 12px 0 4px; }
+  #pBar { height: 100%; width: 0; transition: width .1s; }
+  #pConn { font-weight: 600; margin-top: 12px; }
+  .cap { color: var(--muted); font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; margin-top: 10px; }
 </style>
 </head>
 <body>
-<h1>Motion Games</h1>
-<a class="card" href="bounce.html"><b>Bounce Counter</b><span>Phone in a ball: count bounces and hits within a set time, with the score on your PC.</span></a>
-<a class="card" href="sensors.html"><b>Sensor Viewer</b><span>Live orientation, which way up, spirit level, acceleration and rotation.</span></a>
+
+<!-- ============ HOST (PC) ============ -->
+<div id="host" class="hidden">
+  <div id="topbar"><a id="homeLink" href="#" class="hidden">← All games</a><span id="crumb"></span></div>
+  <div id="layout">
+    <main>
+      <section id="home">
+        <h1>🎮 Motion Games</h1>
+        <p class="muted" style="margin-top:-8px">Pick a game. Every connected phone switches to it automatically — and stays connected when you change games.</p>
+        <div id="games"></div>
+      </section>
+
+      <section id="play" class="hidden">
+        <div class="card" id="clock">
+          <div id="timer">0:00.0</div>
+          <div id="tsubline"></div>
+          <span id="pill">ready</span>
+          <div id="banner" class="hidden"></div>
+          <div class="btns">
+            <button id="startBtn" disabled>Start</button>
+            <button id="resetBtn" class="alt">Reset</button>
+          </div>
+          <div id="howto" class="muted"></div>
+          <div class="muted" style="margin-top:6px">Space = start/stop · R = reset</div>
+        </div>
+        <div id="teams"></div>
+      </section>
+    </main>
+
+    <aside>
+      <div class="card">
+        <h2>Phones</h2>
+        <div id="conn" class="muted">Starting…</div>
+        <div id="qrBox" class="hidden">
+          <div id="qr"></div>
+          <div class="muted">Scan with each phone, tap <b>Start sensor</b>. Each phone becomes a team.</div>
+          <div id="link" class="muted"></div>
+        </div>
+        <div id="phones"></div>
+      </div>
+      <div class="card hidden" id="settingsCard"><h2>Game settings</h2><div id="settings"></div></div>
+      <div class="card">
+        <label class="chk"><input type="checkbox" id="sound" checked> Sound</label>
+      </div>
+      <div class="card"><h2>Activity</h2><ul id="feed"></ul></div>
+    </aside>
+  </div>
+</div>
+
+<!-- ============ PHONE (sensor) ============ -->
+<div id="phone" class="hidden">
+  <div class="card" id="pStartCard">
+    <button id="pStart" style="width:100%">Start sensor</button>
+    <div id="pMsg" class="muted" style="margin-top:10px">Tap to start, then use the phone as the game needs. Keep this screen on and the browser in front.</div>
+  </div>
+  <div id="pLive" class="hidden">
+    <div id="pBox">
+      <div id="pGame">🏠 Waiting for a game</div>
+      <div id="pTeam">Joining…</div>
+      <div id="pBig"></div>
+      <div id="pSub"></div>
+      <div id="pMeter" class="hidden"><div id="pBar"></div></div>
+      <div id="pConn">Connecting…</div>
+      <div class="cap">Force now (1 g = resting)</div>
+      <div><b id="pGauge">–</b> g</div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="games.js?v=1"></script>
+<script src="app.js?v=1"></script>
 </body>
 </html>
