@@ -39,7 +39,7 @@
      ===================================================================== */
   class Sensor {
     constructor(send) {
-      this.send = send; this.cfg = { thr: 2.5, gap: 200 };
+      this.send = send; this.cfg = { thr: 2.5, gap: 200, air: .5 };
       this.rot = 0; this.wob = 0; this.b = 0; this.c = 0; this.g = 1; this.gmax = 0; this.gmin = 99;
       this.pend = null; this.rearm = true; this.lastHit = -1e9; this.airStart = 0; this.airN = 0;
       this.lastT = 0; this.lastFrame = performance.now(); this.got = false;
@@ -68,7 +68,7 @@
       if (!this.rearm && g < c.thr * .7 && now - this.lastHit > c.gap) this.rearm = true;
       if (this.rearm && !this.pend && g > c.thr && now - this.lastHit > c.gap) { this.pend = { t0: now, peak: g }; this.rearm = false; this.lastHit = now; }
       // weightlessness = thrown or dropped
-      if (g < .5) { if (!this.airStart) { this.airStart = now; this.airN = 0; } this.airN++; }
+      if (g < c.air) { if (!this.airStart) { this.airStart = now; this.airN = 0; } this.airN++; }
       else if (this.airStart) {
         const ms = now - this.airStart; if (this.airN >= 4 && ms >= 100) this.send({ t: 'air', ms: Math.round(ms) });
         this.airStart = 0;
@@ -137,11 +137,50 @@
     G, fmt, beep, clamp,
     elapsed(now) { return this.st === 'running' ? now - this.startAt : (this.st === 'finished' ? this.el : 0); },
     log(t, msg) { feed.unshift({ c: t.color, n: t.name, m: msg }); if (feed.length > 60) feed.pop(); renderFeed(); },
-    pushCfg(t) { t.send && t.send({ t: 'cfg', cfg: { thr: t.thr, gap: H.set.gap || 200 } }); },
+    pushCfg(t) { t.send && t.send({ t: 'cfg', cfg: { thr: t.thr, gap: H.set.gap || 200, air: t.air == null ? .5 : t.air } }); },
     pushAll() { H.teams.forEach(t => { t.lastPh = ''; }); },
     finish(timeUp) { finish(timeUp); }
   };
   const feed = [];
+
+  /* ---- sensitivity: one value per game, set for all phones or overridden per phone ---- */
+  const sensStore = (() => { try { return JSON.parse(lsGet('mgSens')) || {}; } catch (_) { return {}; } })();
+  const saveSens = () => lsSet('mgSens', JSON.stringify(sensStore));
+  H.sv = t => {
+    const g = H.game, s = g && g.sens; if (!s) return 0;
+    const own = sensStore[g.id + '|' + t.id], all = sensStore[g.id + '|all'];
+    return own != null ? own : all != null ? all : s.def;
+  };
+  const decimals = s => (String(s.step).split('.')[1] || '').length;
+  function applySens(t) { const s = H.game && H.game.sens; if (s && s.apply) s.apply(t); H.pushCfg(t); }
+  function setSens(t, val) { sensStore[H.game.id + '|' + t.id] = val; saveSens(); applySens(t); syncSensUi(); }
+  function setAllSens(val) {
+    const id = H.game.id; sensStore[id + '|all'] = val;
+    Object.keys(sensStore).forEach(k => { if (k.startsWith(id + '|') && k !== id + '|all') delete sensStore[k]; });
+    saveSens(); H.teams.forEach(applySens); syncSensUi();
+  }
+  function syncSensUi() {
+    const g = H.game, s = g && g.sens; if (!s) return;
+    const dp = decimals(s);
+    H.teams.forEach(t => {
+      if (!t.card) return;
+      const v = H.sv(t), sl = t.card.querySelector('.ssl');
+      if (sl && +sl.value !== v) sl.value = v;
+      const own = sensStore[g.id + '|' + t.id] != null;
+      t.card.querySelector('.sval').textContent = v.toFixed(dp) + s.unit + (own ? ' (this phone)' : '');
+    });
+    const all = sensStore[g.id + '|all'], av = all != null ? all : s.def;
+    if ($('sensAll') && +$('sensAll').value !== av) $('sensAll').value = av;
+    if ($('sensAllV')) $('sensAllV').textContent = av.toFixed(dp) + s.unit;
+  }
+  function sensMeter(t) {                                   // live signal vs the trigger line
+    const s = H.game.sens, v = H.sv(t), sig = s.signal(t);
+    if (!isFinite(sig) || !t.card) return;
+    const trig = s.flip ? sig < v : sig > v, f = t.card.querySelector('.sfill');
+    f.style.width = clamp(sig / s.scale, 0, 1) * 100 + '%'; f.style.background = trig ? 'var(--ga)' : '#5aa8ff';
+    t.card.querySelector('.smark').style.left = clamp(v / s.scale, 0, 1) * 100 + '%';
+    t.card.querySelector('.slive').textContent = `now ${sig.toFixed(s.dp != null ? s.dp : 1)}${s.unit}`;
+  }
   const saved = (() => { try { return JSON.parse(lsGet('mgTeams')) || {}; } catch (_) { return {}; } })();
   const saveNames = () => { const o = {}; H.teams.forEach(t => { o[t.id] = { name: t.name, color: t.color }; }); lsSet('mgTeams', JSON.stringify(o)); };
 
@@ -167,7 +206,7 @@
     t = { id, i, online: false, send: null, conn: null, f: null, lr: null, lw: null, thr: 2.5, lastPh: '', lastDraw: performance.now(),
           name: s ? s.name : 'Team ' + (i + 1), color: s ? s.color : COLORS[i % COLORS.length], s: {} };
     H.teams.push(t); saveNames();
-    if (H.game) { H.game.reset(t); buildCard(t); }
+    if (H.game) { H.game.reset(t); buildCard(t); applySens(t); }
     return t;
   }
   function renderPhones() {
@@ -189,16 +228,21 @@
   function buildCard(t) {
     const g = H.game, d = document.createElement('div');
     d.className = 'team'; d.style.setProperty('--tc', t.color);
-    d.innerHTML = `<div class="thead"><span class="tn"></span><span class="ts"></span></div><canvas class="arena"></canvas><div class="tscore">0</div><div class="tsub"></div><div class="textra">${g.extra ? g.extra(t) : ''}</div>`;
+    d.innerHTML = `<div class="thead"><span class="tn"></span><span class="ts"></span></div><canvas class="arena"></canvas><div class="tscore">0</div><div class="tsub"></div>${g.sens ? `<div class="sens"><div class="sbar"><i class="sfill"></i><b class="smark"></b></div><div class="srow"><span>${g.sens.label}: <b class="sval"></b></span><span class="slive"></span></div><input type="range" class="ssl" min="${g.sens.min}" max="${g.sens.max}" step="${g.sens.step}"></div>` : ''}<div class="textra">${g.extra ? g.extra(t) : ''}</div>`;
     t.card = d; t.cv = d.querySelector('canvas'); t.cx = t.cv.getContext('2d'); t.ex = d.querySelector('.textra');
     $('teams').appendChild(d);
     if (g.bind) g.bind(t, t.ex);
+    if (g.sens) { d.querySelector('.ssl').oninput = e => setSens(t, +e.target.value); syncSensUi(); }
   }
 
   /* ---- settings panel ---- */
   function buildSettings() {
     const g = H.game, box = $('settings'); box.innerHTML = ''; H.set = {};
     const row = html => { const d = document.createElement('div'); d.className = 'field'; d.innerHTML = html; box.appendChild(d); return d; };
+    if (g.sens) {
+      const s = g.sens, d = row(`<label>🎚️ Sensitivity — <b>all phones</b>: <b id="sensAllV"></b><br><span style="font-size:.8rem">${s.hint}<br>Each team's card has its own slider for a single phone.</span></label><input type="range" id="sensAll" min="${s.min}" max="${s.max}" step="${s.step}">`);
+      d.querySelector('#sensAll').oninput = e => setAllSens(+e.target.value);
+    }
     if (g.mode === 'timed') {
       H.set.min = Math.floor(g.defDur / 60); H.set.sec = g.defDur % 60;
       const d = row(`<label>Everyone plays for (0:00 = no limit)</label><div class="time"><input type="number" id="s_min" min="0" max="99" value="${H.set.min}" inputmode="numeric"> <span class="muted">min</span> <input type="number" id="s_sec" min="0" max="59" value="${H.set.sec}" inputmode="numeric"> <span class="muted">sec</span></div>`);
@@ -238,8 +282,8 @@
     document.documentElement.style.setProperty('--ga', g.accent);
     buildSettings(); $('teams').innerHTML = '';
     H.teams.forEach(t => { g.reset(t); buildCard(t); });
-    renderPhones();
-    H.teams.forEach(t => { sendMode(t); H.pushCfg(t); });
+    syncSensUi(); renderPhones();
+    H.teams.forEach(t => { sendMode(t); applySens(t); });
   }
   function goHome() {
     H.game = null; H.st = 'idle';
@@ -303,7 +347,7 @@
       if (t.conn && t.conn !== c && t.conn.open) t.conn.close();
       t.conn = c; t.online = true; ref.t = t; t.lr = null; t.lw = null;
       t.send = x => { if (c.open) c.send(x); };
-      sendMode(t); H.pushCfg(t); renderPhones(); beep(660, 80);
+      sendMode(t); applySens(t); renderPhones(); beep(660, 80);
       return;
     }
     const t = ref.t; if (!t) return;
@@ -323,14 +367,17 @@
   }
 
   /* ---- render loop ---- */
-  function drawTeam(t, now) {
-    const cv = t.cv, r = devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
-    if (!w) return;
+  // Draws one team's arena on any canvas (PC card or live-view window). The arena is laid out 150 px tall and scaled up.
+  function drawOn(t, cv, cx, now, win) {
+    const r = win.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+    if (!w || !h) return;
     if (cv.width !== Math.round(w * r)) { cv.width = Math.round(w * r); cv.height = Math.round(h * r); }
-    const dt = Math.min(.05, (now - t.lastDraw) / 1000); t.lastDraw = now;
-    t.cx.setTransform(r, 0, 0, r, 0, 0);
-    H.game.draw(t, t.cx, w, h, now, dt);
+    const dt = Math.max(0, Math.min(.05, (now - t.lastDraw) / 1000)); t.lastDraw = Math.max(now, t.lastDraw);
+    const k = h / 150;
+    cx.setTransform(r * k, 0, 0, r * k, 0, 0);
+    H.game.draw(t, cx, w / k, 150, now, dt);
   }
+  const drawTeam = (t, now) => drawOn(t, t.cv, t.cx, now, window);
   function paint() {
     requestAnimationFrame(paint);
     if (!H.game) return;
@@ -339,7 +386,7 @@
   }
   function logic() {                                        // runs on a timer so a hidden tab keeps the clock honest
     const g = H.game, now = performance.now();
-    if (!g) return;
+    if (!g) { viewTick(now); return; }
     if (H.st === 'running' && now >= H.endAt) finish(true);
     g.tick && g.tick(now);
     const ck = g.clock ? g.clock(now) : null, el = H.elapsed(now);
@@ -362,12 +409,84 @@
       t.card.querySelector('.tscore').textContent = g.scoreText(t);
       t.card.querySelector('.tsub').textContent = g.sub ? g.sub(t) : '';
       g.cardUpdate && g.cardUpdate(t, t.ex);
+      if (g.sens) sensMeter(t);
       if (t.send && t.online && g.phone) {                  // keep the phone's screen in step
         const ph = g.phone(t, now), msg = { t: 'ph', name: t.name, color: t.color, big: ph.big, sub: ph.sub || '', meter: ph.meter == null ? null : +ph.meter.toFixed(2), bg: ph.bg || null };
         const key = JSON.stringify(msg);
         if (key !== t.lastPh && now - (t.lastPhAt || 0) > 150) { t.lastPh = key; t.lastPhAt = now; t.send(msg); }
       }
     });
+    viewTick(now);
+  }
+
+  /* ---- live view: a second window (drag it to a projector / TV) that only shows the game, then the results ---- */
+  let view = null;
+  function openView() {
+    if (view && !view.w.closed) { view.w.focus(); return; }
+    const w = window.open('view.html', 'mgview', 'width=1280,height=720');
+    if (!w) { alert('The browser blocked the pop-up. Allow pop-ups for this site, then click Live view again.'); return; }
+    H.attachView(w);
+  }
+  H.attachView = w => { view = { w, d: null, key: '', fin: false, painting: false }; };
+  function viewTick(now) {
+    if (!view) return;
+    if (view.w.closed) { view = null; return; }
+    let d; try { d = view.w.document; } catch (_) { return; }
+    const v = id => d.getElementById(id);
+    if (!v('vTeams')) return;                               // still loading
+    if (view.d !== d) { view.d = d; view.key = ''; view.painting = false; }
+    const g = H.game, key = (g ? g.id : 'home') + '|' + H.teams.map(t => t.id).join(',');
+    if (key !== view.key) {                                 // game or team list changed → rebuild the cards
+      view.key = key; view.fin = false;
+      v('vHome').classList.toggle('hidden', !!g); v('vGame').classList.toggle('hidden', !g); v('vResults').classList.add('hidden');
+      v('vTeams').innerHTML = ''; v('vTeams').dataset.n = H.teams.length;
+      H.teams.forEach(t => { t.vcard = null; });
+      if (g) {
+        d.documentElement.style.setProperty('--ga', g.accent); v('vTitle').textContent = `${g.emoji} ${g.title}`;
+        H.teams.forEach(t => {
+          const c = d.createElement('div'); c.className = 'vt'; c.style.setProperty('--tc', t.color);
+          c.innerHTML = '<div class="vn"></div><canvas></canvas><div class="vs"></div><div class="vsub"></div>';
+          v('vTeams').appendChild(c); t.vcard = c; t.vcv = c.querySelector('canvas'); t.vcx = t.vcv.getContext('2d');
+        });
+      }
+    }
+    if (!view.painting) {                                   // paint on the view window's own frame clock
+      view.painting = true; const w = view.w;
+      const loop = () => { if (!view || view.w !== w || w.closed) return; w.requestAnimationFrame(loop); vPaint(performance.now()); };
+      w.requestAnimationFrame(loop);
+    }
+    if (!g) {
+      v('vChips').innerHTML = H.teams.length ? H.teams.map(t => `<span class="chip" style="--tc:${t.color}">${esc(t.name)}${t.online ? '' : ' ○'}</span>`).join('') : '<span class="muted">Waiting for phones to join…</span>';
+      return;
+    }
+    v('vTimer').textContent = $('timer').textContent; v('vSub').textContent = $('tsubline').textContent;
+    v('vClock').dataset.mood = $('clock').dataset.mood; v('vPill').textContent = $('pill').textContent; v('vPill').className = $('pill').className;
+    H.teams.forEach(t => {
+      if (!t.vcard) return;
+      t.vcard.querySelector('.vn').textContent = t.name; t.vcard.querySelector('.vs').textContent = g.scoreText(t);
+      t.vcard.querySelector('.vsub').textContent = g.sub ? g.sub(t) : '';
+      t.vcard.classList.toggle('off', !t.online); t.vcard.classList.toggle('win', !!(t.card && t.card.classList.contains('win')));
+    });
+    if (H.st === 'finished') { if (!view.fin) { view.fin = true; vResults(d, g); } }
+    else if (view.fin) { view.fin = false; v('vResults').classList.add('hidden'); }
+  }
+  function vPaint(now) {
+    if (!H.game || !view || !view.d) return;
+    H.teams.forEach(t => { if (t.vcard) drawOn(t, t.vcv, t.vcx, now, view.w); });
+  }
+  function vResults(d, g) {
+    const key = t => g.rankKey ? g.rankKey(t) : g.score(t), dir = g.better === 'low' ? 1 : -1;
+    const played = H.teams.filter(t => !g.played || g.played(t)), rest = H.teams.filter(t => !played.includes(t));
+    const ranked = [...played].sort((a, b) => dir * (key(a) - key(b)));
+    const medals = ['🥇', '🥈', '🥉'];
+    const rows = ranked.map((t, i) => {
+      const pos = ranked.findIndex(x => key(x) === key(t));      // ties share a place
+      return `<li style="--tc:${t.color}"><span class="rk">${pos < 3 ? medals[pos] : (pos + 1) + '.'}</span><span class="rn">${esc(t.name)}</span><span class="rsc">${esc(g.scoreText(t))}</span><span class="rsub">${esc(g.sub ? g.sub(t) : '')}</span></li>`;
+    }).concat(rest.map(t => `<li style="--tc:${t.color}" class="dim"><span class="rk">–</span><span class="rn">${esc(t.name)}</span><span class="rsc">${esc(g.scoreText(t))}</span><span class="rsub">did not score</span></li>`));
+    d.getElementById('vResTitle').textContent = `${g.emoji} ${g.title} — Results`;
+    d.getElementById('vBanner').textContent = $('banner').textContent;
+    d.getElementById('vList').innerHTML = rows.join('');
+    d.getElementById('vResults').classList.remove('hidden');
   }
   // home screen: tell phones their name while no game is open
   setInterval(() => {
@@ -385,6 +504,7 @@
     $('host').classList.remove('hidden');
     buildHome(); renderPhones();
     $('homeLink').onclick = e => { e.preventDefault(); if (H.st === 'running') { if (!confirm('A game is running. Go back to the games list?')) return; } goHome(); };
+    $('viewBtn').onclick = openView;
     $('startBtn').onclick = () => { if (H.st === 'running' || H.st === 'armed') stopGame(); else startGame(); };
     $('resetBtn').onclick = resetGame;
     document.addEventListener('keydown', e => {

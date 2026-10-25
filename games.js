@@ -37,6 +37,13 @@
   };
   const allDone = (fn) => H.teams.length > 0 && H.teams.every(fn);
 
+  // what "sensitivity" means for the games that detect weightlessness (thrown / dropped)
+  const AIR_SENS = {
+    label: 'Counts as airborne below', unit: ' g', min: .2, max: .9, step: .05, def: .5, scale: 2, flip: true, dp: 2,
+    hint: 'Higher = more sensitive. The phone counts as "in the air" when the force on it falls below this.',
+    signal: t => t.f ? t.f.gn : 1, apply: t => { t.air = H.sv(t); }
+  };
+
   const GAMES = {};
 
   /* ======================================================================
@@ -51,6 +58,11 @@
       { k: 'gap', type: 'range', min: 80, max: 1000, step: 20, val: 200, label: 'Ignore repeat hits within {v} ms' }
     ],
     reset(t) { t.s = { count: 0, maxG: 0, last: null, y: 0, vy: 0, sq: 0, rings: [] }; },
+    sens: {
+      label: 'Hit trigger', unit: ' g', min: 1.3, max: 8, step: .1, def: 2.5, scale: 8,
+      hint: 'Lower = more sensitive. A hit has to reach this force to count.',
+      signal: t => t.f ? t.f.gx : 1, apply: t => { t.thr = H.sv(t); }
+    },
     onSetting(k) { if (k === 'gap') H.teams.forEach(H.pushCfg); },
     onHit(t, g, counted) {
       const s = t.s; s.last = { g, c: counted };
@@ -60,10 +72,6 @@
     score: t => t.s.count, scoreText: t => String(t.s.count),
     sub: t => t.s.last ? `Max ${t.s.maxG.toFixed(1)} g · last ${t.s.last.g.toFixed(1)} g${t.s.last.c ? '' : ' (not counted)'}` : 'Waiting for a bounce…',
     phone: t => ({ big: t.s.count, sub: t.s.last ? `Last hit ${t.s.last.g.toFixed(1)} g` : 'Bounce it!' }),
-    extra: t => `<label class="sl">Trigger at <b class="thrv">${t.thr.toFixed(1)}</b> g — lower is more sensitive<input type="range" class="thr" min="1.3" max="8" step="0.1" value="${t.thr}"></label>`,
-    bind(t, el) {
-      el.querySelector('.thr').oninput = e => { t.thr = +e.target.value; el.querySelector('.thrv').textContent = t.thr.toFixed(1); H.pushCfg(t); };
-    },
     draw(t, c, w, h, now, dt) {
       const s = t.s, gy = h - 24, r = Math.min(24, h * .17), x = w / 2;
       bg(c, w, h, '#1c2230', '#12161d');
@@ -93,8 +101,13 @@
   GAMES.waiter = {
     id: 'waiter', emoji: '🍽️', title: 'Waiter Service', accent: '#4cc9f0', mode: 'stopwatch', better: 'high',
     blurb: 'Carry the tray round the course without spilling a drop.',
-    how: 'Lay the phone flat on a tray. Start at 1000 points: wobbles and tilting drain them, and tipping past the spill angle (set on the right, default 12°) is a spill (−50). Press Finished when a team completes the course. Highest score wins, fastest time breaks ties.',
-    settings: [{ k: 'spill', type: 'range', min: 4, max: 40, step: 1, val: 12, label: 'Spill when tipped more than {v}°' }],
+    how: 'Lay the phone flat on a tray. Start at 1000 points: wobbles and tilting drain them, and tipping past the spill angle (adjust it with the sensitivity sliders) is a spill (−50). Press Finished when a team completes the course. Highest score wins, fastest time breaks ties.',
+    settings: [],
+    sens: {
+      label: 'Spill angle', unit: '°', min: 4, max: 40, step: 1, def: 12, scale: 40, dp: 0,
+      hint: 'Lower = more sensitive. Tipping the tray past this angle spills a drink.',
+      signal: t => t.s.tilt
+    },
     reset(t) { t.s = { wobPen: 0, tiltPen: 0, spills: 0, lastSpill: -1e9, rate: 0, tilt: 0, finished: false, finT: 0, level: 1, sl: 0, vsl: 0, parts: [], spawn: 0, b0: 0, c0: 0 }; },
     onBegin() { H.teams.forEach(t => { if (t.f) { t.s.b0 = t.f.b; t.s.c0 = t.f.c; } }); },
     onFrame(t, f, d, dt, now) {
@@ -104,7 +117,7 @@
       if (H.st !== 'running' || s.finished) return;
       s.wobPen += d.wob * 120;
       if (s.tilt > 5) s.tiltPen += (s.tilt - 5) * dt / 1000 * .5;
-      if (s.tilt > H.set.spill && now - s.lastSpill > 1500) {
+      if (s.tilt > H.sv(t) && now - s.lastSpill > 1500) {
         s.spills++; s.lastSpill = now; s.level = Math.max(.15, s.level - .12); s.spawn = (f.c - s.c0) >= 0 ? 1 : -1;
         H.beep(170, 220, .2, 'sawtooth'); H.log(t, '💦 spilled!');
       }
@@ -153,7 +166,7 @@
       s.parts = s.parts.filter(p => (p.a += dt) < 1.1);
       s.parts.forEach(p => { p.vy += 600 * dt; p.x += p.vx * dt; p.y += p.vy * dt; c.globalAlpha = 1 - p.a / 1.1; c.fillStyle = t.color; c.beginPath(); c.arc(p.x, p.y, 3, 0, TAU); c.fill(); });
       c.globalAlpha = 1;
-      txt(c, `${s.tilt.toFixed(0)}°`, 8, 18, 13, s.tilt > H.set.spill ? '#ff6b6b' : s.tilt > 5 ? '#ffb547' : '#8a92a3', 'left');
+      txt(c, `${s.tilt.toFixed(0)}°`, 8, 18, 13, s.tilt > H.sv(t) ? '#ff6b6b' : s.tilt > 5 ? '#ffb547' : '#8a92a3', 'left');
       // (spill threshold is a setting; recolour when past it)
       if (now - s.lastSpill < 900) txt(c, 'SPILL!', w - 10, 20, 15, '#ff6b6b', 'right', 800);
     }
@@ -166,7 +179,7 @@
     id: 'hang', emoji: '🚀', title: 'Hang Time', accent: '#a78bfa', mode: 'timed', defDur: 60, better: 'high',
     blurb: 'Throw it high and keep it in the air the longest.',
     how: 'Throw the ball (and phone) up and catch it. The phone knows when it is weightless. Your best throw counts; height is worked out from the time in the air.',
-    settings: [],
+    settings: [], sens: AIR_SENS,
     reset(t) { t.s = { best: 0, throws: [], air: false, t0: 0, by: 0, fall: 0, pops: [], spark: [], ang: 0 }; },
     onFrame(t, f, d, dt, now) { const s = t.s; if (f.air && !s.air) { s.air = true; s.t0 = now; } else if (!f.air && s.air) s.air = false; },
     onAir(t, ms) {
@@ -215,10 +228,15 @@
     blurb: 'Spin or roll the ball for the most full turns.',
     how: 'The phone adds up every degree it rotates while the clock runs. Spin it, roll it, whirl it — most full turns wins.',
     settings: [],
+    sens: {
+      label: 'Ignore turning slower than', unit: ' °/s', min: 0, max: 200, step: 5, def: 15, scale: 600, dp: 0,
+      hint: 'Higher = less sensitive. Slow drifting and jitter below this speed is not counted.',
+      signal: t => t.s.rate
+    },
     reset(t) { t.s = { rot: 0, rate: 0, ang: 0, lastRev: 0, pulses: [], peak: 0 }; },
     onFrame(t, f, d, dt) {
       const s = t.s, r = dt > 0 ? d.rot / (dt / 1000) : 0; s.rate += (r - s.rate) * .3;
-      if (H.st === 'running') { s.rot += d.rot; s.peak = Math.max(s.peak, s.rate); }
+      if (H.st === 'running') { if (r > H.sv(t)) s.rot += d.rot; s.peak = Math.max(s.peak, s.rate); }
     },
     score: t => t.s.rot / 360, played: t => t.s.rot > 0,
     scoreText: t => (t.s.rot / 360).toFixed(1),
@@ -255,6 +273,11 @@
       { k: 'rounds', type: 'number', min: 1, max: 12, val: 5, label: 'Rounds' },
       { k: 'freezeSecs', type: 'number', min: 2, max: 10, val: 4, label: 'Freeze lasts (seconds)' }
     ],
+    sens: {
+      label: 'Movement allowed', unit: ' pts', min: 0, max: 40, step: 1, def: 6, scale: 40, dp: 0,
+      hint: 'Lower = stricter. Movement above this during a freeze earns penalty points.',
+      signal: t => t.s.M
+    },
     reset(t) { t.s = { M: 0, rp: null, total: 0, rate: 0, hist: [] }; F.phase = 'idle'; F.round = 0; },
     onStart() { F.round = 0; this.nextRound(performance.now()); },
     nextRound(now) {
@@ -268,7 +291,7 @@
         F.phase = 'freeze'; F.at = now; F.len = H.set.freezeSecs * 1000; H.teams.forEach(t => { t.s.M = 0; }); H.beep(300, 700, .25); H.pushAll();
       } else if (F.phase === 'freeze' && e >= F.len) {
         F.phase = 'result'; F.at = now; F.len = 2600;
-        H.teams.forEach(t => { t.s.rp = Math.round(Math.max(0, t.s.M - 6)); t.s.total += t.s.rp; t.s.hist.push(t.s.rp); H.log(t, `R${F.round}: ${t.s.rp ? '+' + t.s.rp + ' pts' : 'frozen solid ✨'}`); });
+        H.teams.forEach(t => { t.s.rp = Math.round(Math.max(0, t.s.M - H.sv(t))); t.s.total += t.s.rp; t.s.hist.push(t.s.rp); H.log(t, `R${F.round}: ${t.s.rp ? '+' + t.s.rp + ' pts' : 'frozen solid ✨'}`); });
         H.beep(520, 200); H.pushAll();
       } else if (F.phase === 'result' && e >= F.len) {
         if (F.round >= H.set.rounds) { F.phase = 'done'; H.finish(false); } else this.nextRound(now);
@@ -310,7 +333,7 @@
         const fr = clamp(s.M / 40, 0, 1), bw = w - 30;
         c.fillStyle = 'rgba(0,0,0,.35)'; rr(c, 15, h - 18, bw, 8, 4); c.fill();
         c.fillStyle = `hsl(${200 - fr * 200},85%,55%)`; rr(c, 15, h - 18, Math.max(8, bw * fr), 8, 4); c.fill();
-        c.fillStyle = '#fff'; c.fillRect(15 + bw * (6 / 40), h - 21, 2, 14);
+        c.fillStyle = '#fff'; c.fillRect(15 + bw * (H.sv(t) / 40), h - 21, 2, 14);
       }
       if (ph === 'result' && s.rp !== null) txt(c, s.rp ? `+${s.rp}` : 'PERFECT!', cx, 24, 20, s.rp ? '#ff8a8a' : '#7be0a0', 'center', 800);
     }
@@ -324,7 +347,7 @@
     id: 'drop', emoji: '🎯', title: 'Drop Zone', accent: '#fbbf24', mode: 'rounds', better: 'low',
     blurb: 'Drop the ball from exactly the height the PC calls out.',
     how: 'Each round the PC shows a target height. Release the ball from where you think that is. The phone times the fall and works out the real height — closest to the target wins. Fewest total centimetres off wins.',
-    settings: [{ k: 'rounds', type: 'number', min: 1, max: 10, val: 3, label: 'Rounds' }],
+    settings: [{ k: 'rounds', type: 'number', min: 1, max: 10, val: 3, label: 'Rounds' }], sens: AIR_SENS,
     reset(t) { t.s = { cur: null, total: 0, hist: [], t0: 0 }; D.phase = 'idle'; D.round = 0; D.target = 0; },
     onStart() { D.round = 0; this.nextRound(performance.now()); },
     nextRound(now) {

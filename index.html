@@ -70,6 +70,12 @@
   .tscore { font-size: clamp(2.6rem, 8vw, 4rem); font-weight: 800; text-align: center; font-variant-numeric: tabular-nums; line-height: 1.15; margin-top: 4px; }
   .tsub { text-align: center; color: var(--muted); font-size: .85rem; min-height: 1.3em; }
   .textra { margin-top: 6px; }
+  .sens { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+  .sbar { position: relative; height: 12px; border-radius: 6px; background: #262b36; overflow: hidden; }
+  .sfill { display: block; height: 100%; width: 0; background: #5aa8ff; }
+  .smark { position: absolute; top: 0; bottom: 0; width: 3px; margin-left: -1px; background: #fff; box-shadow: 0 0 4px #000; }
+  .srow { display: flex; justify-content: space-between; gap: 8px; font-size: .8rem; color: var(--muted); margin: 5px 0 2px; }
+  .srow b { color: var(--text); }
   .textra button { width: 100%; }
   .sl { display: block; font-size: .8rem; color: var(--muted); }
   input[type=range] { width: 100%; accent-color: var(--ga); }
@@ -110,7 +116,8 @@
 
 <!-- ============ HOST (PC) ============ -->
 <div id="host" class="hidden">
-  <div id="topbar"><a id="homeLink" href="#" class="hidden">← All games</a><span id="crumb"></span></div>
+  <div id="topbar"><a id="homeLink" href="#" class="hidden">← All games</a><span id="crumb"></span>
+    <button id="viewBtn" class="alt" style="margin-left:auto;padding:6px 12px" title="Opens a second window to drag onto a projector or TV">📺 Live view</button></div>
   <div id="layout">
     <main>
       <section id="home">
@@ -178,7 +185,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-<script src="games.js?v=2"></script>
-<script src="app.js?v=2"></script>
+<script src="games.js?v=3"></script>
+<script src="app.js?v=3"></script>
 </body>
 </html>
