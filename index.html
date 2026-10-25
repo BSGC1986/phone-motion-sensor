@@ -69,6 +69,40 @@
   .arena { width: 100%; height: 150px; display: block; border-radius: 10px; background: #12161d; }
   .tscore { font-size: clamp(2.6rem, 8vw, 4rem); font-weight: 800; text-align: center; font-variant-numeric: tabular-nums; line-height: 1.15; margin-top: 4px; }
   .tsub { text-align: center; color: var(--muted); font-size: .85rem; min-height: 1.3em; }
+  /* tournament */
+  #tbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-weight: 700; border-color: #ffd166; background: linear-gradient(90deg, #3b3216, var(--card)); }
+  #tbar button { padding: 6px 12px; }
+  #play.intour #resetBtn { display: none; }
+  #play.intour .btns { grid-template-columns: 1fr; }
+  .th { margin: 4px 0 10px; font-size: 1.15rem; }
+  #trows { display: grid; gap: 8px; margin: 12px 0; }
+  .trow { display: grid; grid-template-columns: minmax(180px, 1.1fr) auto 2fr auto; gap: 8px 14px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-left: 6px solid var(--ga); border-radius: 12px; background: #131720; }
+  .trow.off { opacity: .45; }
+  .trow label { font-size: .85rem; color: var(--muted); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .trow input[type=number] { width: 66px; padding: 5px 6px; font-size: 1rem; }
+  .trow input[type=range] { width: 130px; }
+  .tinc { color: var(--text) !important; font-size: 1rem !important; }
+  .tinc b { font-size: 1.05rem; } .temoji { font-size: 1.6rem; }
+  .topts { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+  .tord button { padding: 4px 10px; }
+  .tbreak { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 14px 0 6px; }
+  .tbreak label { font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .tbtns { display: flex; gap: 10px; margin-top: 14px; } .tbtns button { padding: 14px 22px; font-size: 1.05rem; }
+  .tbn { color: var(--muted); font-weight: 700; }
+  .tbnext { display: flex; gap: 16px; align-items: center; padding: 14px; margin: 10px 0; border-radius: 14px; background: linear-gradient(120deg, color-mix(in srgb, var(--ga) 28%, #181b22), #181b22 70%); border: 1px solid var(--ga); }
+  .tbnext b { font-size: 1.4rem; }
+  .tbclock { text-align: center; } #tbSecs { font-size: clamp(5rem, 16vw, 10rem); font-weight: 800; line-height: 1; color: var(--ga); font-variant-numeric: tabular-nums; }
+  .tbctl { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; margin: 10px 0; }
+  .tbctl label { color: var(--muted); font-size: .9rem; } .tbctl input { width: 66px; }
+  .tblast { text-align: center; margin: 8px 0; }
+  .tfwin { text-align: center; font-size: clamp(1.8rem, 5vw, 3rem); font-weight: 800; color: #ffd166; margin: 8px 0 12px; }
+  table.board { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .board th { color: var(--muted); font-weight: 600; font-size: .85rem; padding: 4px 8px; text-align: right; } .board th:nth-child(2) { text-align: left; }
+  .board td { padding: 8px; border-top: 1px solid var(--line); text-align: right; }
+  .board td:first-child { text-align: center; width: 2.4em; font-size: 1.2rem; }
+  .board .tn2 { text-align: left; font-weight: 800; color: var(--tc); font-size: 1.1rem; }
+  .board .tot { font-weight: 800; font-size: 1.2rem; } .board small { color: var(--good); font-weight: 600; }
+  @media (max-width: 760px) { .trow { grid-template-columns: 1fr auto; } .topts { grid-column: 1 / -1; } }
   #clock[data-free="1"] .hf { display: none !important; }
   .tscore.small { font-size: clamp(1.7rem, 3vw, 2.3rem); }
   #pBig.long { font-size: clamp(2rem, 11vw, 3.4rem); }
@@ -133,7 +167,10 @@
         <div id="games"></div>
       </section>
 
+      <section id="tour" class="hidden"><div class="card" id="tourBody"></div></section>
+
       <section id="play" class="hidden">
+        <div class="card hidden" id="tbar"><span id="tbText"></span><button id="tbEndBtn" class="alt">End tournament</button></div>
         <div class="card" id="clock">
           <div id="timer" class="hf">0:00.0</div>
           <div id="tsubline" class="hf"></div>
@@ -192,7 +229,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-<script src="games.js?v=4"></script>
-<script src="app.js?v=4"></script>
+<script src="games.js?v=5"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>

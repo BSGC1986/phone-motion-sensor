@@ -206,7 +206,12 @@
       <button class="gcard" data-id="${g.id}" style="--ga:${g.accent}">
         <span class="gemoji">${g.emoji}</span><b>${g.title}</b><span>${g.blurb}</span>
       </button>`).join('');
-    $('games').querySelectorAll('button.gcard').forEach(b => b.onclick = () => openGame(b.dataset.id));
+    $('games').insertAdjacentHTML('afterbegin', `
+      <button class="gcard" id="tourCard" style="--ga:#ffd166">
+        <span class="gemoji">🏆</span><b>Tournament</b><span>Pick several games, set the rounds and timings, and crown an overall champion — with a countdown break between games.</span>
+      </button>`);
+    $('games').querySelectorAll('button.gcard[data-id]').forEach(b => b.onclick = () => openGame(b.dataset.id));
+    $('tourCard').onclick = tourSetup;
   }
 
   /* ---- teams ---- */
@@ -247,7 +252,7 @@
   }
 
   /* ---- settings panel ---- */
-  function buildSettings() {
+  function buildSettings(ov) {                              // ov = values forced by a tournament setup
     const g = H.game, box = $('settings'); box.innerHTML = ''; H.set = {};
     const row = html => { const d = document.createElement('div'); d.className = 'field'; d.innerHTML = html; box.appendChild(d); return d; };
     if (g.sens) {
@@ -255,20 +260,21 @@
       d.querySelector('#sensAll').oninput = e => setAllSens(+e.target.value);
     }
     if (g.mode === 'timed') {
-      H.set.min = Math.floor(g.defDur / 60); H.set.sec = g.defDur % 60;
+      H.set.min = ov && ov.min != null ? ov.min : Math.floor(g.defDur / 60); H.set.sec = ov && ov.sec != null ? ov.sec : g.defDur % 60;
       const d = row(`<label>Everyone plays for (0:00 = no limit)</label><div class="time"><input type="number" id="s_min" min="0" max="99" value="${H.set.min}" inputmode="numeric"> <span class="muted">min</span> <input type="number" id="s_sec" min="0" max="59" value="${H.set.sec}" inputmode="numeric"> <span class="muted">sec</span></div>`);
       d.querySelector('#s_min').oninput = e => { H.set.min = +e.target.value || 0; }; d.querySelector('#s_sec').oninput = e => { H.set.sec = +e.target.value || 0; };
     }
     (g.settings || []).forEach(s => {
-      H.set[s.k] = s.val; let d;
+      const val = ov && ov[s.k] != null ? ov[s.k] : s.val;
+      H.set[s.k] = val; let d;
       if (s.type === 'check') {
-        d = row(`<label class="chk"><input type="checkbox" ${s.val ? 'checked' : ''}> ${s.label}</label>`);
+        d = row(`<label class="chk"><input type="checkbox" ${val ? 'checked' : ''}> ${s.label}</label>`);
         d.querySelector('input').onchange = e => { H.set[s.k] = e.target.checked; g.onSetting && g.onSetting(s.k); };
       } else if (s.type === 'range') {
-        d = row(`<label>${s.label.replace('{v}', `<b class="v">${s.val}</b>`)}</label><input type="range" min="${s.min}" max="${s.max}" step="${s.step}" value="${s.val}">`);
+        d = row(`<label>${s.label.replace('{v}', `<b class="v">${val}</b>`)}</label><input type="range" min="${s.min}" max="${s.max}" step="${s.step}" value="${val}">`);
         d.querySelector('input').oninput = e => { H.set[s.k] = +e.target.value; d.querySelector('.v').textContent = e.target.value; g.onSetting && g.onSetting(s.k); };
       } else {
-        d = row(`<label>${s.label}</label><input type="number" min="${s.min}" max="${s.max}" value="${s.val}" inputmode="numeric">`);
+        d = row(`<label>${s.label}</label><input type="number" min="${s.min}" max="${s.max}" value="${val}" inputmode="numeric">`);
         d.querySelector('input').oninput = e => { H.set[s.k] = clamp(+e.target.value || s.min, s.min, s.max); g.onSetting && g.onSetting(s.k); };
       }
     });
@@ -282,26 +288,32 @@
     t.send && t.send({ t: 'mode', id: g ? g.id : null, emoji: g && g.emoji, title: g && g.title, accent: g ? g.accent : '#ffb547' });
     t.lastPh = '';
   }
-  function openGame(id) {
+  function openGame(id, ov) {
     if (H.game && H.game.destroy) H.game.destroy();
     const g = H.game = GAMES[id];
     H.st = 'idle'; H.el = 0; H.startAt = 0; H.endAt = Infinity; feed.length = 0; renderFeed();
-    $('banner').classList.add('hidden');
-    $('home').classList.add('hidden'); $('play').classList.remove('hidden');
+    $('banner').classList.add('hidden'); $('play').classList.remove('intour'); $('tbar').classList.add('hidden');
+    $('home').classList.add('hidden'); $('tour').classList.add('hidden'); $('play').classList.remove('hidden');
     $('crumb').textContent = `${g.emoji} ${g.title}`; $('homeLink').classList.remove('hidden');
     $('howto').textContent = g.how; $('clock').style.setProperty('--ga', g.accent); $('clock').dataset.free = g.mode === 'free' ? '1' : '';
     document.documentElement.style.setProperty('--ga', g.accent);
-    buildSettings(); $('teams').innerHTML = '';
+    buildSettings(ov); $('teams').innerHTML = '';
     H.teams.forEach(t => { g.reset(t); buildCard(t); });
     syncSensUi(); renderPhones();
     H.teams.forEach(t => { sendMode(t); applySens(t); });
   }
-  function goHome() {
+  function leaveGame() {                                    // close the current game's screen (nothing else shown yet)
+    if (H.game && H.game.destroy) H.game.destroy();
     H.game = null; H.st = 'idle';
-    $('play').classList.add('hidden'); $('home').classList.remove('hidden'); $('homeLink').classList.add('hidden');
-    $('crumb').textContent = ''; $('settingsCard').classList.add('hidden'); document.documentElement.style.setProperty('--ga', '#ffb547');
-    $('teams').innerHTML = ''; feed.length = 0; renderFeed();
-    H.teams.forEach(t => { t.card = null; sendMode(t); });
+    $('play').classList.add('hidden'); $('play').classList.remove('intour'); $('tbar').classList.add('hidden');
+    $('settingsCard').classList.add('hidden'); $('teams').innerHTML = ''; feed.length = 0; renderFeed();
+    H.teams.forEach(t => { t.card = null; });
+  }
+  function goHome() {
+    leaveGame();
+    $('tour').classList.add('hidden'); $('home').classList.remove('hidden'); $('homeLink').classList.add('hidden');
+    $('crumb').textContent = ''; document.documentElement.style.setProperty('--ga', '#ffb547');
+    H.teams.forEach(sendMode);
   }
 
   /* ---- run state machine ---- */
@@ -309,7 +321,7 @@
     const g = H.game; if (!g || g.mode === 'free' || H.st === 'running' || H.st === 'armed' || !H.teams.length) return;
     H.teams.forEach(t => g.reset(t)); feed.length = 0; renderFeed();
     $('banner').classList.add('hidden'); H.teams.forEach(t => t.card.classList.remove('win'));
-    H.dur = g.mode === 'timed' ? cfgDur() : 0;
+    H.dur = g.mode === 'timed' ? cfgDur() : g.mode === 'stopwatch' ? (H.set.limit || 0) * 1000 : 0;
     if (g.mode === 'rounds') { begin(performance.now()); g.onStart && g.onStart(); }
     else if (H.set.onFirst && g.armable) H.st = 'armed';
     else begin(performance.now());
@@ -317,7 +329,7 @@
   }
   function begin(now) {
     const g = H.game; H.st = 'running'; H.startAt = now;
-    H.endAt = g.mode === 'timed' && H.dur > 0 ? now + H.dur : Infinity;
+    H.endAt = (g.mode === 'timed' || g.mode === 'stopwatch') && H.dur > 0 ? now + H.dur : Infinity;
     g.onBegin && g.onBegin(now);
   }
   function finish(timeUp) {
@@ -397,7 +409,7 @@
   }
   function logic() {                                        // runs on a timer so a hidden tab keeps the clock honest
     const g = H.game, now = performance.now();
-    if (!g) { viewTick(now); return; }
+    if (!g) { tourTick(now); viewTick(now); return; }
     if (H.st === 'running' && now >= H.endAt) finish(true);
     g.tick && g.tick(now);
     const ck = g.clock ? g.clock(now) : null, el = H.elapsed(now);
@@ -406,12 +418,13 @@
     else {
       $('timer').classList.remove('small'); $('clock').dataset.mood = '';
       $('timer').textContent = g.mode === 'timed' && d > 0 ? fmt(Math.max(0, d - el), false) : fmt(el, true);
-      $('tsubline').textContent = '';
+      $('tsubline').textContent = g.mode === 'stopwatch' && H.dur > 0 ? 'Time limit ' + fmt(H.dur, true) : '';
     }
     $('pill').textContent = { idle: 'ready', armed: 'waiting for the first bounce', running: g.mode === 'timed' ? 'counting' : 'in progress', finished: 'finished' }[H.st];
     $('pill').className = H.st;
     const live = H.st === 'running' || H.st === 'armed';
     $('startBtn').textContent = live ? 'Stop' : 'Start'; $('startBtn').className = live ? 'stop' : '';
+    $('startBtn').style.display = T.state !== 'off' && !live ? 'none' : '';             // tournaments start games automatically
     H.teams.forEach(t => {
       if (!t.card) return;
       t.card.querySelector('.tn').textContent = t.name; t.card.querySelector('.tn').style.color = t.color;
@@ -427,6 +440,7 @@
         if (key !== t.lastPh && now - (t.lastPhAt || 0) > 150) { t.lastPh = key; t.lastPhAt = now; t.send(msg); }
       }
     });
+    tourTick(now);
     viewTick(now);
   }
 
@@ -448,7 +462,7 @@
     if (view.d !== d) { view.d = d; view.key = ''; view.painting = false; }
     const g = H.game, key = (g ? g.id : 'home') + '|' + H.teams.map(t => t.id).join(',');
     if (key !== view.key) {                                 // game or team list changed → rebuild the cards
-      view.key = key; view.fin = false;
+      view.key = key; view.fin = false; view.ov = null; view.bs = '';
       v('vHome').classList.toggle('hidden', !!g); v('vGame').classList.toggle('hidden', !g); v('vResults').classList.add('hidden');
       v('vTeams').innerHTML = ''; v('vTeams').dataset.n = H.teams.length;
       H.teams.forEach(t => { t.vcard = null; });
@@ -467,10 +481,19 @@
       const loop = () => { if (!view || view.w !== w || w.closed) return; w.requestAnimationFrame(loop); vPaint(performance.now()); };
       w.requestAnimationFrame(loop);
     }
+    const ov = T.state === 'break' && T.screen === 'break' ? 'break' : T.state === 'final' && T.screen === 'final' ? 'final' : '';
+    if (ov !== view.ov) {                                   // tournament break / final screens take over the live view
+      view.ov = ov; view.bs = ''; v('vBreak').classList.toggle('hidden', ov !== 'break');
+      if (ov === 'final') vFinal(d); else if (view.finShown) v('vResults').classList.add('hidden');
+      view.finShown = ov === 'final';
+    }
+    if (ov === 'break') { const s = vBreakHtml(); if (s !== view.bs) { view.bs = s; v('vBreak').innerHTML = s; } }
+    if (ov) return;
     if (!g) {
       v('vChips').innerHTML = H.teams.length ? H.teams.map(t => `<span class="chip" style="--tc:${t.color}">${esc(t.name)}${t.online ? '' : ' ○'}</span>`).join('') : '<span class="muted">Waiting for phones to join…</span>';
       return;
     }
+    v('vTitle').textContent = (T.cur && (T.state === 'playing' || T.state === 'break') ? `🏆 ${T.next}/${T.seq.length} · ` : '') + `${g.emoji} ${g.title}`;
     v('vTimer').textContent = $('timer').textContent; v('vSub').textContent = $('tsubline').textContent;
     v('vClock').dataset.mood = $('clock').dataset.mood; v('vPill').textContent = $('pill').textContent; v('vPill').className = $('pill').className;
     H.teams.forEach(t => {
@@ -500,9 +523,259 @@
     d.getElementById('vList').innerHTML = rows.join('');
     d.getElementById('vResults').classList.remove('hidden');
   }
+  /* =====================================================================
+     TOURNAMENT — a series of games with a break between each, points per game, and an overall champion
+     ===================================================================== */
+  const T = {
+    state: 'off',      // off | setup | playing | break | final
+    screen: '',        // what the PC is showing: setup | game | break | final
+    cfg: null, seq: [], next: 0, cur: null, scores: {}, hist: [], lastPts: {}, lastBanner: '', finalText: '',
+    breakSecs: 20, breakEnd: 0, holdUntil: 0, awarded: false, secShown: -1
+  };
+  const fmtPts = v => Number.isInteger(v) ? String(v) : v.toFixed(1);
+  const ordinal = n => { const s = ['th', 'st', 'nd', 'rd'], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); };
+  const playable = () => Object.keys(GAMES).filter(id => GAMES[id].mode !== 'free');
+
+  function defaultCfg() {
+    const order = playable(), games = {};
+    order.forEach(id => {
+      const g = GAMES[id], set = {}; (g.settings || []).forEach(s => { set[s.k] = s.val; });
+      games[id] = { inc: true, plays: 1, min: g.mode === 'timed' ? Math.floor(g.defDur / 60) : 0, sec: g.mode === 'timed' ? g.defDur % 60 : 0, set };
+    });
+    return { order, games, breakSecs: 20 };
+  }
+  function loadCfg() {
+    const d = defaultCfg();
+    try {
+      const s = JSON.parse(lsGet('mgTour'));
+      if (s) {
+        d.breakSecs = s.breakSecs || 20;
+        if (Array.isArray(s.order)) { const o = s.order.filter(id => d.games[id]); Object.keys(d.games).forEach(id => { if (!o.includes(id)) o.push(id); }); d.order = o; }
+        Object.keys(d.games).forEach(id => {
+          if (!s.games || !s.games[id]) return;
+          const defSet = d.games[id].set; Object.assign(d.games[id], s.games[id]); d.games[id].set = Object.assign({}, defSet, s.games[id].set || {});
+        });
+      }
+    } catch (_) {}
+    return d;
+  }
+  const saveCfg = () => lsSet('mgTour', JSON.stringify(T.cfg));
+  const estSecs = (id, c) => {
+    const g = GAMES[id], s = c.set;
+    if (g.mode === 'timed') return (c.min * 60 + c.sec) || 60;
+    if (id === 'freeze') return s.rounds * (5 + s.freezeSecs + 2.6);
+    if (id === 'drop') return s.rounds * 18;
+    if (id === 'waiter') return s.limit || 120;
+    return 60;
+  };
+
+  function showTour() {
+    $('home').classList.add('hidden'); $('play').classList.add('hidden'); $('tour').classList.remove('hidden');
+    $('homeLink').classList.remove('hidden'); $('crumb').textContent = '🏆 Tournament';
+    document.documentElement.style.setProperty('--ga', '#ffd166');
+  }
+
+  /* ---- setup screen ---- */
+  function tourSetup() {
+    T.state = 'setup'; T.screen = 'setup'; T.cfg = loadCfg(); showTour();
+    $('tourBody').innerHTML = `<h2 class="th">🏆 Tournament setup</h2>
+      <p class="muted">Choose the games, put them in order, then set how many rounds of each to play and how long each lasts. Every round is scored: 1st place earns the most points and last place the fewest. The highest total at the end is the champion.</p>
+      <div id="trows"></div>
+      <div class="tbreak"><label>⏳ Break between games <input type="number" id="tBreak" min="5" max="300" value="${T.cfg.breakSecs}"> seconds</label>
+        <span class="muted">Each break introduces the next game with a countdown. You can change the break during the tournament too.</span></div>
+      <div id="tEst" class="muted"></div>
+      <div class="tbtns"><button id="tGo">▶ Start tournament</button><button id="tBack" class="alt">Cancel</button></div><div id="tWarn" class="err"></div>`;
+    drawRows();
+  }
+  function drawRows() {
+    const cfg = T.cfg;
+    $('trows').innerHTML = cfg.order.map((id, i) => {
+      const g = GAMES[id], c = cfg.games[id]; let opts = '';
+      if (g.mode === 'timed') opts += `<label>Time <input type="number" data-f="min" min="0" max="99" value="${c.min}"> m <input type="number" data-f="sec" min="0" max="59" value="${c.sec}"> s</label>`;
+      (g.settings || []).forEach(s => {
+        const v = c.set[s.k];
+        if (s.type === 'check') opts += `<label class="chk"><input type="checkbox" data-k="${s.k}" ${v ? 'checked' : ''}> ${s.label}</label>`;
+        else if (s.type === 'range') opts += `<label>${s.label.replace('{v}', `<b>${v}</b>`)}<input type="range" data-k="${s.k}" min="${s.min}" max="${s.max}" step="${s.step}" value="${v}"></label>`;
+        else opts += `<label>${s.label} <input type="number" data-k="${s.k}" min="${s.min}" max="${s.max}" value="${v}"></label>`;
+      });
+      return `<div class="trow ${c.inc ? '' : 'off'}" data-id="${id}" style="--ga:${g.accent}">
+        <label class="tinc"><input type="checkbox" class="inc" ${c.inc ? 'checked' : ''}><span class="temoji">${g.emoji}</span><b>${g.title}</b></label>
+        <label class="tplays">Rounds <input type="number" data-f="plays" min="1" max="9" value="${c.plays}"></label>
+        <div class="topts">${opts}</div>
+        <span class="tord"><button class="alt up" ${i === 0 ? 'disabled' : ''}>↑</button><button class="alt dn" ${i === cfg.order.length - 1 ? 'disabled' : ''}>↓</button></span></div>`;
+    }).join('');
+    updateEst();
+  }
+  function updateEst() {
+    const cfg = T.cfg; let plays = 0, secs = 0, games = 0;
+    cfg.order.forEach(id => { const c = cfg.games[id]; if (!c.inc) return; games++; plays += c.plays; secs += c.plays * estSecs(id, c); });
+    secs += plays * cfg.breakSecs;
+    if ($('tEst')) $('tEst').textContent = plays ? `${games} game${games === 1 ? '' : 's'} · ${plays} round${plays === 1 ? '' : 's'} in total · about ${Math.round(secs / 60)} minutes including breaks.` : 'Tick at least one game.';
+  }
+
+  function tourBind() {                                    // one set of listeners for every tournament screen
+    const body = $('tourBody');
+    body.addEventListener('input', e => {
+      const el = e.target;
+      if (el.id === 'tBreak') { T.cfg.breakSecs = clamp(+el.value || 20, 5, 300); saveCfg(); updateEst(); return; }
+      if (el.id === 'tbLen') { T.breakSecs = clamp(+el.value || 20, 5, 300); if (T.cfg) { T.cfg.breakSecs = T.breakSecs; saveCfg(); } return; }
+      const row = el.closest('.trow'); if (!row || T.state !== 'setup') return;
+      const id = row.dataset.id, c = T.cfg.games[id], g = GAMES[id];
+      if (el.classList.contains('inc')) { c.inc = el.checked; row.classList.toggle('off', !c.inc); }
+      else if (el.dataset.f) { const lim = { plays: [1, 9], min: [0, 99], sec: [0, 59] }[el.dataset.f]; c[el.dataset.f] = clamp(Math.round(+el.value || lim[0]), lim[0], lim[1]); }
+      else if (el.dataset.k) {
+        const s = g.settings.find(x => x.k === el.dataset.k);
+        c.set[s.k] = s.type === 'check' ? el.checked : clamp(+el.value || s.min, s.min, s.max);
+        if (s.type === 'range') el.parentNode.querySelector('b').textContent = el.value;
+      }
+      saveCfg(); updateEst();
+    });
+    body.addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b) return;
+      const now = performance.now();
+      if (b.classList.contains('up') || b.classList.contains('dn')) {
+        const id = b.closest('.trow').dataset.id, o = T.cfg.order, i = o.indexOf(id), j = b.classList.contains('up') ? i - 1 : i + 1;
+        [o[i], o[j]] = [o[j], o[i]]; saveCfg(); drawRows();
+      }
+      else if (b.id === 'tBack') { T.state = 'off'; goHome(); }
+      else if (b.id === 'tGo') tourStart();
+      else if (b.id === 'tbM') T.breakEnd = Math.max(now + 1000, T.breakEnd - 10000);
+      else if (b.id === 'tbP') T.breakEnd += 10000;
+      else if (b.id === 'tbSkip') T.breakEnd = now;
+      else if (b.id === 'tbEnd') { if (confirm('End the tournament now?')) { endTour(); goHome(); } }
+      else if (b.id === 'tfNew') tourSetup();
+      else if (b.id === 'tfHome') { endTour(); goHome(); }
+    });
+  }
+
+  /* ---- running it ---- */
+  function tourStart() {
+    const cfg = T.cfg, seq = [];
+    cfg.order.forEach(id => { const c = cfg.games[id]; if (c.inc) for (let p = 1; p <= c.plays; p++) seq.push({ id, play: p, plays: c.plays }); });
+    if (!seq.length) { $('tWarn').textContent = 'Tick at least one game.'; return; }
+    if (!H.teams.length) { $('tWarn').textContent = 'Connect at least one phone first — scan the QR code on the right.'; return; }
+    T.seq = seq; T.next = 0; T.cur = null; T.scores = {}; T.hist = []; T.lastPts = {}; T.lastBanner = ''; T.finalText = '';
+    T.breakSecs = cfg.breakSecs; ensureAudio(); enterBreak(performance.now(), 0);
+  }
+  function enterBreak(now, hold) {                         // hold = seconds to keep showing the last game's results first
+    T.state = 'break'; T.breakEnd = now + T.breakSecs * 1000; T.holdUntil = now + hold * 1000; T.secShown = -1;
+    if (hold > 0) T.screen = 'game'; else showBreakScreen();
+  }
+  function standings() {
+    const rows = H.teams.map(t => ({ t, total: T.scores[t.id] || 0, last: T.lastPts[t.id] || 0 })).sort((a, b) => b.total - a.total);
+    rows.forEach(r => { r.place = rows.findIndex(x => x.total === r.total) + 1; });
+    return rows;
+  }
+  function boardHtml(final) {
+    const medals = ['🥇', '🥈', '🥉'], rows = standings();
+    const head = final ? `<tr><th></th><th>Team</th>${T.hist.map(h => `<th title="${esc(h.title)}">${h.emoji}</th>`).join('')}<th>Total</th></tr>` : '';
+    const body = rows.map(r => `<tr style="--tc:${r.t.color}"><td>${r.place <= 3 && (final || T.hist.length) ? medals[r.place - 1] : r.place + '.'}</td><td class="tn2">${esc(r.t.name)}</td>${final ? T.hist.map(h => `<td>${fmtPts(h.pts[r.t.id] || 0)}</td>`).join('') : ''}<td class="tot">${fmtPts(r.total)}${!final && T.hist.length ? `<small> +${fmtPts(r.last)}</small>` : ''}</td></tr>`).join('');
+    return `<table class="board">${head}${body}</table>`;
+  }
+  function award() {                                       // points for this round: 1st = number of teams … last = 1; ties share
+    const g = H.game, key = t => g.rankKey ? g.rankKey(t) : g.score(t), dir = g.better === 'low' ? 1 : -1, n = H.teams.length;
+    const sorted = H.teams.filter(t => !g.played || g.played(t)).sort((a, b) => dir * (key(a) - key(b))), pts = {};
+    for (let i = 0; i < sorted.length;) {
+      let j = i; while (j + 1 < sorted.length && key(sorted[j + 1]) === key(sorted[i])) j++;
+      let sum = 0; for (let p = i; p <= j; p++) sum += n - p;
+      for (let p = i; p <= j; p++) pts[sorted[p].id] = sum / (j - i + 1);
+      i = j + 1;
+    }
+    H.teams.forEach(t => { T.scores[t.id] = (T.scores[t.id] || 0) + (pts[t.id] || 0); });
+    T.hist.push({ emoji: g.emoji, title: g.title, pts }); T.lastPts = pts; T.lastBanner = $('banner').textContent; T.awarded = true;
+  }
+
+  function showBreakScreen() {
+    leaveGame(); showTour(); T.screen = 'break';
+    const p = T.seq[T.next], g = GAMES[p.id];
+    document.documentElement.style.setProperty('--ga', g.accent);
+    $('tourBody').innerHTML = `
+      <div class="tbn">🏆 Game ${T.next + 1} of ${T.seq.length}${p.plays > 1 ? ` · round ${p.play} of ${p.plays}` : ''}</div>
+      <div class="tbnext" style="--ga:${g.accent}"><span class="gemoji">${g.emoji}</span><div><b>Up next: ${esc(g.title)}</b><div>${esc(g.blurb)}</div><div class="muted">${esc(g.how)}</div></div></div>
+      <div class="tbclock"><span class="cap">Starts in</span><div id="tbSecs">0</div></div>
+      <div class="tbctl"><button id="tbM" class="alt">−10 s</button><button id="tbP" class="alt">+10 s</button><button id="tbSkip">Start now ▶</button>
+        <label>Break length <input type="number" id="tbLen" min="5" max="300" value="${T.breakSecs}"> s</label><button id="tbEnd" class="alt">End tournament</button></div>
+      ${T.lastBanner ? `<div class="tblast">Last game: <b>${esc(T.lastBanner)}</b></div>` : ''}
+      <h3 class="th">Standings</h3><div id="tbBoard">${boardHtml(false)}</div>`;
+    H.teams.forEach(t => { t.send && t.send({ t: 'mode', id: 'break', emoji: '⏳', title: `Next: ${g.emoji} ${g.title}`, accent: g.accent }); t.lastPh = ''; });
+  }
+  function showFinalScreen() {
+    leaveGame(); showTour(); T.screen = 'final';
+    const rows = standings(), champs = rows.filter(r => r.place === 1);
+    T.finalText = H.teams.length === 1 ? `🏁 Tournament complete — ${fmtPts(rows[0].total)} points`
+      : champs.length === 1 ? `🏆 ${champs[0].t.name} is the champion!` : `🤝 Joint champions: ${champs.map(r => r.t.name).join(' & ')}`;
+    $('tourBody').innerHTML = `<div class="tfwin">${esc(T.finalText)}</div><h3 class="th">Final standings</h3>${boardHtml(true)}
+      <div class="tbtns"><button id="tfNew">New tournament</button><button id="tfHome" class="alt">Back to games</button></div>`;
+    H.teams.forEach(t => { t.send && t.send({ t: 'mode', id: 'final', emoji: '🏆', title: 'Tournament over', accent: '#ffd166' }); t.lastPh = ''; });
+    beep(523, 200, .2); setTimeout(() => beep(659, 200, .2), 220); setTimeout(() => beep(784, 400, .2), 440);
+  }
+  function startPlay() {
+    const p = T.seq[T.next++], c = T.cfg.games[p.id];
+    T.cur = p; T.state = 'playing'; T.screen = 'game'; T.awarded = false;
+    openGame(p.id, Object.assign({ min: c.min, sec: c.sec }, c.set));
+    $('play').classList.add('intour'); $('tbar').classList.remove('hidden');
+    $('tbText').textContent = `🏆 Tournament · game ${T.next} of ${T.seq.length}${p.plays > 1 ? ` · round ${p.play} of ${p.plays}` : ''}`;
+    beep(880, 300, .2);
+    setTimeout(() => { if (T.state === 'playing' && H.game && H.game.id === p.id && H.st === 'idle') startGame(); }, 800);
+  }
+  function endTour() {
+    T.state = 'off'; T.screen = ''; T.cur = null;
+    $('play').classList.remove('intour'); $('tbar').classList.add('hidden');
+  }
+  function phoneTour(kind, secs) {
+    const rows = standings();
+    H.teams.forEach(t => {
+      if (!t.send || !t.online) return;
+      const r = rows.find(x => x.t === t); let msg;
+      if (kind === 'break') {
+        const g = GAMES[T.seq[T.next].id];
+        msg = { t: 'ph', name: t.name, color: t.color, big: secs, sub: `Next: ${g.emoji} ${g.title}${T.hist.length ? ` · you're ${ordinal(r.place)} (${fmtPts(r.total)} pts)` : ''}`, meter: null, bg: '#14301f' };
+      } else msg = { t: 'ph', name: t.name, color: t.color, big: r.place === 1 ? '🏆' : ordinal(r.place), sub: `${fmtPts(r.total)} points`, meter: null, bg: r.place === 1 ? '#3b3216' : null };
+      const key = JSON.stringify(msg); if (key !== t.lastPh) { t.lastPh = key; t.send(msg); }
+    });
+  }
+  function tourTick(now) {
+    if (T.state === 'off' || T.state === 'setup') return;
+    if (T.state === 'playing') {
+      if (H.game && H.st === 'finished' && !T.awarded) {
+        award();
+        if (T.next >= T.seq.length) { T.state = 'final'; T.screen = 'game'; T.holdUntil = now + 8000; }
+        else enterBreak(now, Math.min(8, T.breakSecs * .4));
+      }
+      return;
+    }
+    if (T.state === 'break') {
+      if (T.screen === 'game' && now >= T.holdUntil) showBreakScreen();
+      const left = T.breakEnd - now, secs = Math.max(0, Math.ceil(left / 1000));
+      if (secs !== T.secShown) { T.secShown = secs; if (secs > 0 && secs <= 5) beep(620, 90); }
+      if (T.screen === 'break') { const el = $('tbSecs'); if (el) el.textContent = secs; phoneTour('break', secs); }
+      if (left <= 0) startPlay();
+      return;
+    }
+    if (T.state === 'final') {
+      if (T.screen === 'game' && now >= T.holdUntil) showFinalScreen();
+      if (T.screen === 'final') phoneTour('final');
+    }
+  }
+  // the same screens on the live-view window
+  function vBreakHtml() {
+    const p = T.seq[T.next]; if (!p) return '';
+    const g = GAMES[p.id], secs = Math.max(0, Math.ceil((T.breakEnd - performance.now()) / 1000));
+    return `<div class="bk-top">🏆 Game ${T.next + 1} of ${T.seq.length}${p.plays > 1 ? ` · round ${p.play} of ${p.plays}` : ''}</div>
+      <div class="bk-next" style="--ga:${g.accent}"><span class="bk-e">${g.emoji}</span><div><div class="bk-t">Up next: ${esc(g.title)}</div><div class="bk-b">${esc(g.blurb)}</div></div></div>
+      <div class="bk-count"><small>starts in</small>${secs}</div>
+      <div class="bk-board">${T.lastBanner ? `<div class="bk-last">${esc(T.lastBanner)}</div>` : ''}${boardHtml(false)}</div>`;
+  }
+  function vFinal(d) {
+    const medals = ['🥇', '🥈', '🥉'], rows = standings();
+    d.getElementById('vResTitle').textContent = '🏆 Tournament Results'; d.getElementById('vBanner').textContent = T.finalText;
+    d.getElementById('vList').innerHTML = rows.map(r => `<li style="--tc:${r.t.color}"><span class="rk">${r.place <= 3 ? medals[r.place - 1] : r.place + '.'}</span><span class="rn">${esc(r.t.name)}</span><span class="rsc">${fmtPts(r.total)}</span><span class="rsub">${T.hist.map(h => `${h.emoji} ${fmtPts(h.pts[r.t.id] || 0)}`).join('  ·  ')}</span></li>`).join('');
+    d.getElementById('vResults').classList.remove('hidden');
+  }
+
   // home screen: tell phones their name while no game is open
   setInterval(() => {
-    if (H.game) return;
+    if (H.game || T.state !== 'off') return;
     H.teams.forEach(t => {
       if (!t.send || !t.online) return;
       const msg = { t: 'ph', name: t.name, color: t.color, big: '', sub: 'Waiting for the host to pick a game…', meter: null, bg: null }, key = JSON.stringify(msg);
@@ -515,14 +788,24 @@
     window.__hostOn = true; wake();
     $('host').classList.remove('hidden');
     buildHome(); renderPhones();
-    $('homeLink').onclick = e => { e.preventDefault(); if (H.st === 'running') { if (!confirm('A game is running. Go back to the games list?')) return; } goHome(); };
+    $('homeLink').onclick = e => {
+      e.preventDefault();
+      if (T.state === 'break' || T.state === 'playing') { if (!confirm('End the tournament and go back to the games list?')) return; }
+      else if (H.st === 'running') { if (!confirm('A game is running. Go back to the games list?')) return; }
+      endTour(); goHome();
+    };
     $('viewBtn').onclick = openView;
-    $('startBtn').onclick = () => { if (H.st === 'running' || H.st === 'armed') stopGame(); else startGame(); };
+    $('startBtn').onclick = () => {
+      if (H.st === 'running' || H.st === 'armed') stopGame();
+      else if (T.state === 'off') startGame();               // a tournament starts its games by itself
+    };
     $('resetBtn').onclick = resetGame;
+    $('tbEndBtn').onclick = () => { if (confirm('End the tournament now?')) { endTour(); goHome(); } };
+    tourBind();
     document.addEventListener('keydown', e => {
       if ($('play').classList.contains('hidden') || /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
       if (e.code === 'Space') { e.preventDefault(); $('startBtn').click(); }
-      if (e.key === 'r' || e.key === 'R') $('resetBtn').click();
+      if ((e.key === 'r' || e.key === 'R') && T.state === 'off') $('resetBtn').click();
     });
     paint(); setInterval(logic, 50);
 

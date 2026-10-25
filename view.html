@@ -50,6 +50,20 @@
   #vChips { display: flex; flex-wrap: wrap; gap: 1.2vh 1.2vw; justify-content: center; max-width: 80vw; }
   .chip { padding: .8vh 1.6vw; border-radius: 99px; border: 3px solid var(--tc); font-size: clamp(1.2rem, 4vh, 2.4rem); font-weight: 700; }
 
+  /* tournament break */
+  #vBreak { position: fixed; inset: 0; background: radial-gradient(circle at 50% 10%, color-mix(in srgb, var(--ga) 20%, #0b0d12), #0b0d12 70%); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2.4vh; padding: 3vh 5vw; overflow: auto; text-align: center; }
+  .bk-top { font-size: clamp(1rem, 3vh, 2rem); color: var(--muted); font-weight: 700; }
+  .bk-next { display: flex; align-items: center; gap: 2vw; padding: 2vh 2.4vw; border-radius: 20px; border: 2px solid var(--ga); background: linear-gradient(120deg, color-mix(in srgb, var(--ga) 28%, #151922), #151922 70%); text-align: left; }
+  .bk-e { font-size: clamp(3rem, 12vh, 8rem); line-height: 1; }
+  .bk-t { font-size: clamp(1.6rem, 6vh, 4rem); font-weight: 800; } .bk-b { color: #c3c9d6; font-size: clamp(1rem, 2.6vh, 1.8rem); }
+  .bk-count { font-size: clamp(5rem, 24vh, 15rem); font-weight: 800; line-height: .95; color: var(--ga); font-variant-numeric: tabular-nums; }
+  .bk-count small { display: block; font-size: clamp(1rem, 3vh, 2rem); color: var(--muted); font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
+  .bk-board { width: min(900px, 100%); } .bk-last { font-size: clamp(1.1rem, 3.4vh, 2.2rem); font-weight: 800; margin-bottom: 1vh; }
+  table.board { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .board td { padding: 1vh 1vw; border-top: 1px solid var(--line); text-align: right; font-size: clamp(1.1rem, 3.4vh, 2.2rem); }
+  .board td:first-child { text-align: center; width: 2.4em; }
+  .board .tn2 { text-align: left; font-weight: 800; color: var(--tc); } .board .tot { font-weight: 800; } .board small { color: var(--good); font-size: .6em; }
+
   /* results */
   #vResults { position: fixed; inset: 0; background: radial-gradient(circle at 50% 20%, color-mix(in srgb, var(--ga) 22%, #0b0d12), #0b0d12 70%); display: flex; flex-direction: column; align-items: center; padding: 5vh 5vw; gap: 3vh; overflow: auto; }
   #vResTitle { font-size: clamp(1.6rem, 5vh, 3.4rem); font-weight: 800; color: var(--ga); text-align: center; }
@@ -77,6 +91,8 @@
   <div id="vClock"><div id="vTimer">0:00.0</div><div id="vSub"></div><span id="vPill">ready</span></div>
   <div id="vTeams"></div>
 </div>
+
+<div id="vBreak" class="hidden"></div>
 
 <div id="vResults" class="hidden">
   <div id="vResTitle"></div>

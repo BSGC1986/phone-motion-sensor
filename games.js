@@ -101,8 +101,8 @@
   GAMES.waiter = {
     id: 'waiter', emoji: '🍽️', title: 'Waiter Service', accent: '#4cc9f0', mode: 'stopwatch', better: 'high',
     blurb: 'Carry the tray round the course without spilling a drop.',
+    settings: [{ k: 'limit', type: 'number', min: 0, max: 900, val: 180, label: 'Time limit in seconds (0 = no limit)' }],
     how: 'Lay the phone flat on a tray. Start at 1000 points: wobbles and tilting drain them, and tipping past the spill angle (adjust it with the sensitivity sliders) is a spill (−50). Press Finished when a team completes the course. Highest score wins, fastest time breaks ties.',
-    settings: [],
     sens: {
       label: 'Spill angle', unit: '°', min: 4, max: 40, step: 1, def: 12, scale: 40, dp: 0,
       hint: 'Lower = more sensitive. Tipping the tray past this angle spills a drink.',
@@ -270,7 +270,7 @@
     blurb: 'Keep moving… then freeze solid when the PC shouts.',
     how: 'Move the ball about until FREEZE! appears, then go completely still. Any movement during the freeze earns penalty points. Fewest penalty points after all rounds wins.',
     settings: [
-      { k: 'rounds', type: 'number', min: 1, max: 12, val: 5, label: 'Rounds' },
+      { k: 'rounds', type: 'number', min: 1, max: 12, val: 5, label: 'Freezes per game' },
       { k: 'freezeSecs', type: 'number', min: 2, max: 10, val: 4, label: 'Freeze lasts (seconds)' }
     ],
     sens: {
@@ -347,7 +347,7 @@
     id: 'drop', emoji: '🎯', title: 'Drop Zone', accent: '#fbbf24', mode: 'rounds', better: 'low',
     blurb: 'Drop the ball from exactly the height the PC calls out.',
     how: 'Each round the PC shows a target height. Release the ball from where you think that is. The phone times the fall and works out the real height — closest to the target wins. Fewest total centimetres off wins.',
-    settings: [{ k: 'rounds', type: 'number', min: 1, max: 10, val: 3, label: 'Rounds' }], sens: AIR_SENS,
+    settings: [{ k: 'rounds', type: 'number', min: 1, max: 10, val: 3, label: 'Drops per game' }], sens: AIR_SENS,
     reset(t) { t.s = { cur: null, total: 0, hist: [], t0: 0 }; D.phase = 'idle'; D.round = 0; D.target = 0; },
     onStart() { D.round = 0; this.nextRound(performance.now()); },
     nextRound(now) {
