@@ -77,7 +77,10 @@ public class SensorService extends Service implements SensorEventListener {
             @Override public void onConn(String text, boolean ok) { stConn = text; }
             @Override public void onMsg(JSONObject m) { onHost(m); }
         });
-        engine = new Engine(m -> link.send(m));
+        engine = new Engine(m -> {
+            if (!"f".equals(m.optString("t"))) android.util.Log.i("MG", "send " + m);       // hits and throws (frames are too frequent to log)
+            link.send(m);
+        });
 
         thread = new HandlerThread("sensors");
         thread.start();
@@ -90,6 +93,9 @@ public class SensorService extends Service implements SensorEventListener {
         engine.hasLinear = linearOk;
         if (!reg(Sensor.TYPE_GAME_ROTATION_VECTOR, us, h)) reg(Sensor.TYPE_ROTATION_VECTOR, us, h);
 
+        android.util.Log.i("MG", "service started for " + game + " dev=" + dev + " sensors: accel=" + (sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) != null)
+                + " gyro=" + (sm.getDefaultSensor(Sensor.TYPE_GYROSCOPE) != null) + " linear=" + linearOk
+                + " rot=" + (sm.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR) != null) + " cpuLock=" + cpuLock.isHeld() + " wifiLock=" + wifiLock.isHeld());
         link.start();
         return START_STICKY;
     }
@@ -165,6 +171,7 @@ public class SensorService extends Service implements SensorEventListener {
     }
 
     @Override public void onDestroy() {
+        android.util.Log.i("MG", "service stopped");
         running = false; stConn = "Stopped";
         if (sm != null) sm.unregisterListener(this);
         if (thread != null) thread.quitSafely();

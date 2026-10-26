@@ -23,7 +23,18 @@ copy android\app\build\outputs\apk\debug\app-debug.apk motiongames.apk
 The APK is signed with the debug key in `%USERPROFILE%\.android\debug.keystore`. Keep that file: a phone can only
 update the app in place if the new APK is signed with the same key.
 
-## Not covered by automated tests
+## What has been tested
 
-The detection logic (`Engine`) is tested on a PC with synthetic sensor data; the PC page's MQTT side is tested
-against the real broker with a simulated app. The app itself has not been run on a physical phone.
+- The detection logic (`Engine`) on a PC with synthetic sensor data (knocks, throws, gyro, tilt).
+- The PC page's MQTT side against the real broker with a simulated app.
+- On a real Samsung Galaxy S22 (Android 16), over USB debugging: the app connects, receives the PC's settings,
+  and streams ~20 frames/second to the PC **with the screen off**.
+- Not yet tested on a phone: hit / throw detection by hand, and long runs while unplugged (Doze / battery limits).
+
+## Lessons from the first phone test
+
+- Java only tries the first address DNS returns. On a dual-stack Wi-Fi that was an IPv6 address the broker could not be
+  reached on, so every connection timed out. `Link` now looks up the IPv4 address itself.
+- Android rejects the broker's certificate when you connect to an IP address, so the secure routes connect by name and
+  the plain route (IPv4 address, readings only) is tried first.
+- Debug with `adb logcat -s MG:V` — the app logs every connection attempt, message from the PC, and hit it sends.

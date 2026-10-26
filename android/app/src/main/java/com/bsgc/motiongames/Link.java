@@ -2,6 +2,7 @@ package com.bsgc.motiongames;
 
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
 
 import org.eclipse.paho.client.mqttv3.IMqttActionListener;
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
@@ -14,6 +15,8 @@ import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
 import org.json.JSONObject;
 
+import java.net.Inet4Address;
+import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 
 import javax.net.ssl.SSLContext;
@@ -22,6 +25,10 @@ import javax.net.ssl.SSLContext;
  * The phone's line to the PC, through a public MQTT broker.
  * Same JSON messages as the web version:  phone → PC on  motiongames/v1/&lt;game&gt;/up,
  * PC → phone on  motiongames/v1/&lt;game&gt;/dn/&lt;device&gt;  (and /all for "who's there?").
+ *
+ * Why the IPv4 lookup: many home networks hand out IPv6 addresses but cannot actually reach the broker over IPv6,
+ * and Java only tries the first address DNS returns (usually the IPv6 one), so the connection just times out.
+ * Browsers retry over IPv4 automatically; here we do it ourselves.
  */
 class Link implements MqttCallbackExtended {
     interface Listener {
@@ -29,11 +36,14 @@ class Link implements MqttCallbackExtended {
         void onMsg(JSONObject m);
     }
 
-    // Same public broker, three routes. If one is blocked by the network (some Wi-Fi blocks odd ports) we try the next.
-    private static final String[] BROKERS = {
-            "ssl://broker.hivemq.com:8883",           // MQTT over TLS
-            "wss://broker.hivemq.com:8884/mqtt",      // MQTT over a secure WebSocket (what the PC's browser uses)
-            "tcp://broker.hivemq.com:1883"            // plain MQTT (readings only — nothing private)
+    private static final String HOST = "broker.hivemq.com";
+    // scheme, port, path, connect-by-IPv4-address — the same public broker, three routes. If one is blocked we try the next.
+    // Plain MQTT goes first by IPv4 address (it works on networks whose IPv6 is broken; the data is only motion readings).
+    // The secure routes connect by NAME, because Android only accepts the broker's certificate when it knows the name.
+    private static final Object[][] ROUTES = {
+            {"tcp", 1883, "", true},
+            {"ssl", 8883, "", false},
+            {"wss", 8884, "/mqtt", false}
     };
 
     private final String base, dev;
@@ -42,17 +52,6 @@ class Link implements MqttCallbackExtended {
     private MqttAsyncClient cl;
     private volatile boolean stopped;
     private int route = 0;
-
-    /** The deepest cause, e.g. "UnknownHostException: broker.hivemq.com" — what the user actually needs to see. */
-    private static String why(Throwable e) {
-        Throwable t = e;
-        while (t != null && t.getCause() != null && t.getCause() != t) t = t.getCause();
-        if (t == null) return "unknown error";
-        String m = t.getMessage();
-        return t.getClass().getSimpleName() + (m != null && !m.isEmpty() ? ": " + (m.length() > 90 ? m.substring(0, 90) + "…" : m) : "");
-    }
-
-    private static String routeName(String uri) { return uri.startsWith("ssl") ? "TLS" : uri.startsWith("wss") ? "WebSocket" : "plain"; }
 
     /** @param gameId the host id, e.g. "mg-K7QX2M" */
     Link(String gameId, String dev, Listener ln) {
@@ -66,10 +65,40 @@ class Link implements MqttCallbackExtended {
         connect();
     }
 
+    /** The deepest cause, e.g. "SocketTimeoutException: failed to connect…" — what the user actually needs to see. */
+    private static String why(Throwable e) {
+        Throwable t = e;
+        while (t != null && t.getCause() != null && t.getCause() != t) t = t.getCause();
+        if (t == null) return "unknown error";
+        String m = t.getMessage();
+        return t.getClass().getSimpleName() + (m != null && !m.isEmpty() ? ": " + (m.length() > 90 ? m.substring(0, 90) + "…" : m) : "");
+    }
+
+    private static String routeName(String scheme) { return scheme.equals("ssl") ? "TLS" : scheme.equals("wss") ? "WebSocket" : "plain"; }
+
     private void connect() {
         if (stopped) return;
+        new Thread(this::connectNow, "mg-connect").start();           // DNS must not run on the main thread
+    }
+
+    private void connectNow() {
+        if (stopped) return;
         if (cl != null) { try { cl.close(); } catch (Exception ignored) { } cl = null; }      // drop a failed attempt before retrying
-        final String uri = BROKERS[route];
+        final String scheme = (String) ROUTES[route][0];
+        final int port = (Integer) ROUTES[route][1];
+        final String path = (String) ROUTES[route][2];
+        final boolean byIp = (Boolean) ROUTES[route][3];
+
+        String addr = HOST;                                            // fall back to the name if the lookup finds no IPv4
+        if (byIp) {
+            try {
+                for (InetAddress a : InetAddress.getAllByName(HOST)) if (a instanceof Inet4Address) { addr = a.getHostAddress(); break; }
+            } catch (Exception e) {
+                Log.w("MG", "DNS lookup failed", e);
+            }
+        }
+        final String uri = scheme + "://" + addr + ":" + port + path;
+
         try {
             cl = new MqttAsyncClient(uri, "mgp-" + dev + "-" + (int) (Math.random() * 1e6), new MemoryPersistence());
             cl.setCallback(this);
@@ -77,24 +106,26 @@ class Link implements MqttCallbackExtended {
             o.setCleanSession(true);
             o.setAutomaticReconnect(true);
             o.setKeepAliveInterval(20);
-            o.setConnectionTimeout(10);
+            o.setConnectionTimeout(8);
             o.setWill(base + "/up", byeJson().getBytes(StandardCharsets.UTF_8), 0, false);
-            if (!uri.startsWith("tcp")) o.setSocketFactory(SSLContext.getDefault().getSocketFactory());   // use Android's own TLS, not Paho's
-            ln.onConn("Connecting (" + routeName(uri) + ")…", false);
+            if (!scheme.equals("tcp")) o.setSocketFactory(SSLContext.getDefault().getSocketFactory());        // Android's own TLS
+            Log.i("MG", "connecting " + uri);
+            ln.onConn("Connecting (" + routeName(scheme) + ")…", false);
             cl.connect(o, null, new IMqttActionListener() {
                 @Override public void onSuccess(IMqttToken t) { /* connectComplete() does the work */ }
-                @Override public void onFailure(IMqttToken t, Throwable e) { failed(uri, e); }
+                @Override public void onFailure(IMqttToken t, Throwable e) { failed(uri, scheme, e); }
             });
         } catch (Throwable e) {
-            failed(uri, e);
+            failed(uri, scheme, e);
         }
     }
 
-    private void failed(String uri, Throwable e) {
+    private void failed(String uri, String scheme, Throwable e) {
         if (stopped) return;
-        route = (route + 1) % BROKERS.length;
-        ln.onConn("Can't reach the game server via " + routeName(uri) + " (" + why(e) + ") — trying " + routeName(BROKERS[route]) + "…", false);
-        main.postDelayed(this::connect, route == 0 ? 6000 : 1500);              // quick through the routes, then a breather
+        Log.w("MG", "connect failed via " + uri, e);
+        route = (route + 1) % ROUTES.length;
+        ln.onConn("Can't reach the game server via " + routeName(scheme) + " (" + why(e) + ") — trying " + routeName((String) ROUTES[route][0]) + "…", false);
+        main.postDelayed(this::connect, route == 0 ? 6000 : 1000);     // quick through the routes, then a breather
     }
 
     private String byeJson() {
@@ -135,11 +166,13 @@ class Link implements MqttCallbackExtended {
             cl.subscribe(base + "/dn/" + dev, 0);
             cl.subscribe(base + "/all", 0);
         } catch (MqttException ignored) { }
-        ln.onConn("Connected ✓ (" + routeName(uri) + ")", true);
+        Log.i("MG", "connected via " + uri + " reconnect=" + reconnect + " base=" + base);
+        ln.onConn("Connected ✓ (" + routeName(uri.substring(0, uri.indexOf(':'))) + ")", true);
         sendHello();
     }
 
     @Override public void connectionLost(Throwable cause) {
+        Log.w("MG", "connection lost", cause);
         if (!stopped) ln.onConn("Connection lost — reconnecting…", false);
     }
 
@@ -147,6 +180,7 @@ class Link implements MqttCallbackExtended {
         try {
             JSONObject m = new JSONObject(new String(msg.getPayload(), StandardCharsets.UTF_8));
             if (topic.endsWith("/all")) { if ("who".equals(m.optString("t"))) sendHello(); return; }
+            if (!"ph".equals(m.optString("t"))) Log.i("MG", "from PC: " + m.optString("t") + " " + (m.length() > 200 ? "" : m));
             ln.onMsg(m);
         } catch (Exception ignored) { }
     }
