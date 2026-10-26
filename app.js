@@ -646,6 +646,8 @@
     if (id === 'freeze') return s.rounds * (5 + s.freezeSecs + 2.6);
     if (id === 'drop') return s.rounds * 18;
     if (id === 'waiter') return s.limit || 120;
+    if (id === 'simon') return s.rounds * 22;
+    if (id === 'pose') return s.rounds * 14;
     return 60;
   };
 

@@ -796,5 +796,320 @@
   };
   GAMES.racer.debug = () => RC; GAMES.maze.debug = () => ({ MZ, genMaze }); GAMES.stars.debug = () => ST;
 
+  /* ======================================================================
+     11. FLAPPY FLICK — flick the phone to flap a bird through the gaps
+     ====================================================================== */
+  // Everything is in pixels of a 200-px-tall field so the bird is the same size whatever the card width.
+  const FLAP = { speed: 75, grav: 520, flapV: -190, gap: 36, gateEvery: 150, birdX: 70, ground: 180, r: 9, pipeHalf: 17 };
+  let FL = { gates: [], goAt: 0 };
+  function makeGates() { const r = rng((Math.random() * 1e9) | 0), g = []; for (let i = 0; i < 90; i++) g.push({ x: 260 + i * FLAP.gateEvery, c: 62 + r() * 68 }); return g; }
+  function crashFlap(t, now) {
+    const s = t.s; s.dead = true; s.deadAt = now; s.reviveAt = now + 1400; s.crashes++; s.vy = -120; H.beep(150, 220, .15, 'sawtooth');
+  }
+  function stepFlap(t, now) {
+    const s = t.s; if (H.st !== 'running') return;
+    if (s.last == null) s.last = now;
+    let dt = (now - s.last) / 1000; if (dt <= 0) return; dt = Math.min(dt, .1); s.last = now;
+    if (now < FL.goAt) return;
+    if (s.dead) {                                                    // tumble, then come back after a moment
+      s.vy += FLAP.grav * dt; s.y = Math.min(FLAP.ground - FLAP.r, s.y + s.vy * dt);
+      if (now >= s.reviveAt) { s.dead = false; s.y = 100; s.vy = 0; s.inv = now + 1300; }
+      return;
+    }
+    s.vy += FLAP.grav * dt; s.y += s.vy * dt; s.x += FLAP.speed * dt;
+    const bx = s.x + FLAP.birdX, inv = now < s.inv;
+    for (let i = Math.max(0, s.gi - 1); i < FL.gates.length; i++) {
+      const gt = FL.gates[i]; if (gt.x - FLAP.pipeHalf - FLAP.r > bx) break;
+      if (!inv && Math.abs(bx - gt.x) < FLAP.pipeHalf + FLAP.r - 2 && (s.y - FLAP.r < gt.c - FLAP.gap + 2 || s.y + FLAP.r > gt.c + FLAP.gap - 2)) { crashFlap(t, now); return; }
+      if (i === s.gi && bx > gt.x + FLAP.pipeHalf) { s.gi++; s.score++; H.beep(880, 60, .08); }
+    }
+    if (s.y + FLAP.r > FLAP.ground) { if (!inv) { s.y = FLAP.ground - FLAP.r; crashFlap(t, now); } else { s.y = FLAP.ground - FLAP.r; s.vy = Math.min(0, s.vy); } }
+    if (s.y - FLAP.r < 0) { s.y = FLAP.r; s.vy = Math.max(0, s.vy); }
+  }
+  GAMES.flap = {
+    id: 'flap', emoji: '🐦', title: 'Flappy Flick', accent: '#4ade80', mode: 'timed', defDur: 60, better: 'high', arenaH: 200,
+    blurb: 'Flick your phone to flap a bird through the gaps.',
+    how: 'Give the phone a quick flick (up, down — any sharp jerk) and the bird flaps up. Let it fall between flicks and thread it through the green gaps. A crash costs you a moment, then you carry on. Most gaps passed wins.',
+    settings: [{ k: 'gap', type: 'range', min: 80, max: 600, step: 20, val: 160, label: 'Shortest time between flaps: {v} ms' }],
+    sens: {
+      label: 'Flick strength to flap', unit: ' g', min: 1.3, max: 6, step: .1, def: 2, scale: 6,
+      hint: 'Lower = more sensitive: a gentler flick flaps. Higher = it needs a proper flick.',
+      signal: t => t.f ? t.f.gx : 1, apply: t => { t.thr = H.sv(t); }
+    },
+    onSetting(k) { if (k === 'gap') H.teams.forEach(H.pushCfg); },
+    reset(t) { t.s = { y: 100, vy: 0, x: 0, gi: 0, score: 0, crashes: 0, dead: false, deadAt: 0, reviveAt: 0, inv: 0, flapT: -1e9, last: null }; },
+    onBegin(now) { FL = { gates: makeGates(), goAt: now + 3000 }; H.teams.forEach(t => { t.s.last = now; }); },
+    onHit(t, g, counted, now) { const s = t.s; if (H.st !== 'running' || !FL.goAt || now < FL.goAt || s.dead) return; s.vy = FLAP.flapV; s.flapT = now; },
+    tick(now) { if (H.st === 'running') H.teams.forEach(t => stepFlap(t, now)); },
+    score: t => t.s.score, scoreText: t => String(t.s.score),
+    sub: t => `${t.s.crashes} crash${t.s.crashes === 1 ? '' : 'es'}`,
+    phone: (t, now) => ({ big: t.s.score, sub: t.s.dead ? 'Crashed! Back in a moment…' : 'Flick the phone to flap!', bg: t.s.dead ? '#4a1620' : now - t.s.flapT < 150 ? '#14301f' : null }),
+    draw(t, c, w, h, now, dt) {
+      const s = t.s; stepFlap(t, now);
+      bg(c, w, h, '#58b6ff', '#cfeeff');
+      c.fillStyle = 'rgba(255,255,255,.85)';
+      for (let i = 0; i < 5; i++) { const cx = ((i * 140 - s.x * .25) % (w + 120) + (w + 120)) % (w + 120) - 40, cy = 28 + (i * 37) % 80; c.beginPath(); c.ellipse(cx, cy, 26, 10, 0, 0, TAU); c.ellipse(cx + 16, cy - 6, 16, 9, 0, 0, TAU); c.fill(); }
+      for (const gt of FL.gates) {
+        const sx = gt.x - s.x; if (sx < -40) continue; if (sx > w + 40) break;
+        c.fillStyle = '#3aa655'; c.fillRect(sx - FLAP.pipeHalf, 0, FLAP.pipeHalf * 2, gt.c - FLAP.gap); c.fillRect(sx - FLAP.pipeHalf, gt.c + FLAP.gap, FLAP.pipeHalf * 2, FLAP.ground - gt.c - FLAP.gap);
+        c.fillStyle = '#2a8a42'; c.fillRect(sx - FLAP.pipeHalf - 3, gt.c - FLAP.gap - 10, FLAP.pipeHalf * 2 + 6, 10); c.fillRect(sx - FLAP.pipeHalf - 3, gt.c + FLAP.gap, FLAP.pipeHalf * 2 + 6, 10);
+        c.fillStyle = 'rgba(255,255,255,.25)'; c.fillRect(sx - FLAP.pipeHalf + 3, 0, 4, gt.c - FLAP.gap); c.fillRect(sx - FLAP.pipeHalf + 3, gt.c + FLAP.gap + 10, 4, FLAP.ground - gt.c - FLAP.gap - 10);
+      }
+      c.fillStyle = '#d9b36c'; c.fillRect(0, FLAP.ground, w, h - FLAP.ground);
+      c.fillStyle = '#7cc04b'; c.fillRect(0, FLAP.ground, w, 6);
+      c.fillStyle = 'rgba(0,0,0,.08)'; for (let x = -((s.x % 24) + 24); x < w; x += 24) c.fillRect(x, FLAP.ground + 6, 12, 14);
+      // the bird
+      const by = s.y, flapping = now - s.flapT < 180, inv = now < s.inv && !s.dead;
+      c.save(); c.translate(FLAP.birdX, by); c.rotate(clamp(s.vy / 420, -.5, .9) + (s.dead ? (now - s.deadAt) / 120 : 0));
+      if (inv && Math.floor(now / 120) % 2) c.globalAlpha = .45;
+      c.fillStyle = t.color; c.beginPath(); c.arc(0, 0, FLAP.r + 2, 0, TAU); c.fill();
+      c.fillStyle = 'rgba(0,0,0,.18)'; c.beginPath(); c.arc(0, 4, FLAP.r, 0, Math.PI); c.fill();
+      c.fillStyle = '#fff'; c.beginPath(); c.arc(4, -3, 4.2, 0, TAU); c.fill(); c.fillStyle = '#111'; c.beginPath(); c.arc(5.2, -3, 1.9, 0, TAU); c.fill();
+      c.fillStyle = '#ffb020'; c.beginPath(); c.moveTo(9, 0); c.lineTo(17, 3); c.lineTo(9, 5); c.closePath(); c.fill();
+      c.fillStyle = 'rgba(255,255,255,.85)'; c.beginPath(); c.ellipse(-3, flapping ? -6 : 3, 7, flapping ? 4 : 6, flapping ? -.6 : .3, 0, TAU); c.fill();
+      c.restore();
+      txt(c, String(s.score), w / 2, 40, 34, '#fff', 'center', 800);
+      if (s.dead) txt(c, '💥 crash!', w / 2, 100, 18, '#ff4d4d', 'center', 800);
+      if (H.st === 'idle') txt(c, 'Ready — press Start', w / 2, 110, 16, '#1b4b6b');
+      else if (H.st === 'running') countdown(c, w, h, now, FL.goAt);
+    }
+  };
+
+  /* ======================================================================
+     12. SHAKE ROCKET — shake the phone to power a rocket into space
+     ====================================================================== */
+  GAMES.shake = {
+    id: 'shake', emoji: '🛸', title: 'Shake Rocket', accent: '#fb923c', mode: 'timed', defDur: 20, better: 'high', arenaH: 210,
+    blurb: 'Shake the phone as hard as you can to blast a rocket into space.',
+    how: 'Hold the phone firmly and shake it — the harder and faster, the more fuel you make. The rocket climbs as the shaking adds up. Most altitude when the time is up wins. (Hold on tight!)',
+    settings: [],
+    sens: {
+      label: 'Ignore wiggles below', unit: ' g', min: 0, max: 1, step: .05, def: .15, scale: 1.5, dp: 2,
+      hint: 'Lower = more sensitive: small shakes count. Higher = only proper shaking counts.',
+      signal: t => t.s.rate
+    },
+    reset(t) { t.s = { e: 0, rate: 0, parts: [], stars: [], flash: -1e9, orbit: false }; },
+    onFrame(t, f, d, dt) {
+      const s = t.s, inst = dt > 0 ? d.wob / (dt / 1000) : 0;
+      s.rate += (inst - s.rate) * .35;
+      if (H.st === 'running' && inst > H.sv(t)) s.e += d.wob * 60;
+    },
+    score: t => t.s.e, scoreText: t => String(Math.round(t.s.e)), played: t => t.s.e > 0,
+    sub: t => `Altitude ${(Math.min(t.s.e, 1500) / 8).toFixed(0)} km${t.s.e >= 800 ? ' · in orbit! 🌟' : ''}`,
+    phone: t => ({ big: Math.round(t.s.e), sub: t.s.rate > .4 ? 'YES! Keep shaking!' : 'Shake it! Shake it!', meter: clamp(t.s.rate / 1.2, 0, 1), bg: t.s.rate > .6 ? '#4a2a10' : null }),
+    draw(t, c, w, h, now, dt) {
+      const s = t.s, alt = clamp(s.e / 800, 0, 1), over = s.e > 800;
+      const sky = c.createLinearGradient(0, 0, 0, h);                // blue at the bottom fading to black space
+      sky.addColorStop(0, '#02030a'); sky.addColorStop(.5 - alt * .3, `rgb(${20 + (1 - alt) * 20},${30 + (1 - alt) * 60},${70 + (1 - alt) * 120})`); sky.addColorStop(1, `rgb(${70 + (1 - alt) * 70},${140 + (1 - alt) * 60},${210})`);
+      c.fillStyle = sky; c.fillRect(0, 0, w, h);
+      for (let i = 0; i < 40; i++) { c.fillStyle = `rgba(255,255,255,${(.15 + alt * .7) * (.4 + .6 * Math.abs(Math.sin(now / 700 + i)))})`; c.fillRect((i * 73) % w, ((i * 41) + alt * 60) % (h - 30), 1.6, 1.6); }
+      const gy = h - 22 + alt * 60;                                  // the launch pad slides away as you climb
+      if (gy < h + 20) { c.fillStyle = '#2f6b3a'; c.fillRect(0, gy, w, 40); c.fillStyle = '#555c6b'; c.fillRect(w / 2 - 26, gy - 4, 52, 6); }
+      const rx = w / 2 + Math.sin(now / 35) * Math.min(4, s.rate * 5), ry = h - 62 - alt * (h - 110);
+      // exhaust
+      const fl = 10 + s.rate * 60 + Math.random() * 6;
+      s.parts.push({ x: rx + (Math.random() - .5) * 8, y: ry + 24, vx: (Math.random() - .5) * 30, vy: 40 + Math.random() * 60, a: 0 });
+      s.parts = s.parts.filter(p => (p.a += dt) < .6 && p.y < h + 10);
+      s.parts.forEach(p => { p.x += p.vx * dt; p.y += p.vy * dt; c.fillStyle = `rgba(255,${180 - p.a * 200 | 0},60,${.8 - p.a * 1.3})`; c.beginPath(); c.arc(p.x, p.y, 5 * (1 - p.a), 0, TAU); c.fill(); });
+      c.fillStyle = '#ffb020'; c.beginPath(); c.moveTo(rx - 7, ry + 22); c.lineTo(rx, ry + 22 + fl); c.lineTo(rx + 7, ry + 22); c.fill();
+      c.fillStyle = '#ffe8a0'; c.beginPath(); c.moveTo(rx - 3.5, ry + 22); c.lineTo(rx, ry + 22 + fl * .6); c.lineTo(rx + 3.5, ry + 22); c.fill();
+      // the rocket
+      c.fillStyle = t.color; c.beginPath(); c.moveTo(rx - 11, ry + 22); c.lineTo(rx - 20, ry + 34); c.lineTo(rx - 11, ry + 14); c.closePath(); c.fill(); c.beginPath(); c.moveTo(rx + 11, ry + 22); c.lineTo(rx + 20, ry + 34); c.lineTo(rx + 11, ry + 14); c.closePath(); c.fill();
+      c.fillStyle = '#e9edf5'; rr(c, rx - 11, ry - 22, 22, 46, 10); c.fill();
+      c.fillStyle = t.color; c.beginPath(); c.moveTo(rx - 11, ry - 12); c.quadraticCurveTo(rx, ry - 42, rx + 11, ry - 12); c.closePath(); c.fill();
+      c.fillStyle = '#7fd3ff'; c.beginPath(); c.arc(rx, ry - 2, 6, 0, TAU); c.fill(); c.strokeStyle = '#fff'; c.lineWidth = 2; c.stroke();
+      // progress + labels
+      c.fillStyle = 'rgba(0,0,0,.35)'; c.fillRect(w - 14, 10, 6, h - 20); c.fillStyle = over ? '#ffd166' : '#fb923c'; c.fillRect(w - 14, 10 + (h - 20) * (1 - alt), 6, (h - 20) * alt);
+      txt(c, `${(Math.min(s.e, 1500) / 8).toFixed(0)} km`, 10, 20, 15, '#fff', 'left', 800);
+      if (over) { txt(c, 'IN ORBIT! 🌟', w / 2, 30, 18, '#ffd166', 'center', 800); }
+      if (H.st === 'idle') txt(c, 'Ready — press Start, then SHAKE!', w / 2, h / 2, 14, '#fff');
+    }
+  };
+
+  /* ======================================================================
+     13. SIMON SAYS — watch a run of tilt moves, then repeat it from memory
+     ====================================================================== */
+  const DIRS = [{ a: '▲', hz: 660, c: '#4cd37b', n: 'forward' }, { a: '▼', hz: 440, c: '#5aa8ff', n: 'back' }, { a: '◀', hz: 520, c: '#ffb547', n: 'left' }, { a: '▶', hz: 600, c: '#f472b6', n: 'right' }];
+  const SIM = { phase: 'idle', round: 0, at: 0, len: 0, seq: [], beat: -1 };
+  GAMES.simon = {
+    id: 'simon', emoji: '🧠', title: 'Simon Says', accent: '#a78bfa', mode: 'rounds', better: 'high', arenaH: 170,
+    blurb: 'Watch the run of tilt moves, then repeat it from memory.',
+    how: 'Watch the screen: a run of arrows appears, one at a time. Then it is your turn — hold the phone flat, and tip it forward ▲, back ▼, left ◀ or right ▶ for each arrow, returning to level between moves. Get the whole run right to score. Each round adds one more move!',
+    settings: [{ k: 'rounds', type: 'number', min: 1, max: 10, val: 6, label: 'Rounds' }],
+    sens: { ...tiltSens(22), label: 'Tilt needed for a move', hint: 'Lower = more sensitive: a smaller tilt counts as a move.' },
+    reset(t) { t.s = { pts: 0, inputs: [], out: false, done: false, armed: false, flash: -1e9, gain: 0, hist: [], gs: null, g0: null, sdeg: 0 }; SIM.phase = 'idle'; SIM.round = 0; },
+    onStart() { SIM.round = 0; this.nextRound(performance.now()); },
+    nextRound(now) {
+      SIM.round++; const L = SIM.round + 2; SIM.seq = Array.from({ length: L }, () => (Math.random() * 4) | 0);
+      SIM.phase = 'show'; SIM.at = now; SIM.len = 1200 + 800 * L; SIM.beat = -1;
+      H.teams.forEach(t => { Object.assign(t.s, { inputs: [], out: false, done: false, armed: false, gain: 0 }); }); H.beep(700, 120); H.pushAll();
+    },
+    tick(now) {
+      if (H.st !== 'running') return;
+      const e = now - SIM.at, L = SIM.seq.length;
+      if (SIM.phase === 'show') {
+        const beat = Math.floor((e - 900) / 800); if (beat !== SIM.beat && beat >= 0 && beat < L) { SIM.beat = beat; H.beep(DIRS[SIM.seq[beat]].hz, 300, .15); }
+        if (e >= SIM.len) { SIM.phase = 'input'; SIM.at = now; SIM.len = (6 + 1.3 * L) * 1000; H.teams.forEach(t => zeroTilt(t)); H.beep(880, 200, .15); H.pushAll(); }
+      } else if (SIM.phase === 'input') {
+        if (e >= SIM.len || H.teams.every(t => t.s.done || t.s.out)) {
+          H.teams.forEach(t => { const s = t.s; s.gain = s.done ? L : 0; s.pts += s.gain; s.hist.push(s.done); if (s.done) H.log(t, `✓ round ${SIM.round} (+${L})`); else H.log(t, `✗ round ${SIM.round}`); });
+          SIM.phase = 'result'; SIM.at = now; SIM.len = 2600; H.beep(520, 200); H.pushAll();
+        }
+      } else if (SIM.phase === 'result' && e >= SIM.len) {
+        if (SIM.round >= H.set.rounds) { SIM.phase = 'done'; H.finish(false); } else this.nextRound(now);
+      }
+    },
+    onFrame(t, f, d, dt, now) {
+      tiltFrame(t, f); const s = t.s;
+      if (H.st !== 'running' || SIM.phase !== 'input' || s.done || s.out) return;
+      const c = ctl(s, H.sv(t)), ax = Math.abs(c.st), ay = Math.abs(c.th), m = Math.max(ax, ay);
+      if (!s.armed) { if (m < .3) s.armed = true; return; }          // wait for the phone to come back to level between moves
+      if (m > .75) {
+        const dir = ax > ay ? (c.st < 0 ? 2 : 3) : (c.th > 0 ? 0 : 1);
+        s.armed = false; s.inputs.push(dir); s.flash = now;
+        if (dir !== SIM.seq[s.inputs.length - 1]) { s.out = true; H.beep(150, 250, .12, 'sawtooth'); }
+        else if (s.inputs.length === SIM.seq.length) { s.done = true; H.beep(1000, 150, .12); }
+      }
+    },
+    score: t => t.s.pts, scoreText: t => t.s.pts + ' pts',
+    sub: t => t.s.hist.length ? 'Rounds: ' + t.s.hist.map(x => x ? '✓' : '✗').join(' ') : 'Remember the moves!',
+    clock(now) {
+      const L = SIM.seq.length, R = `Round ${SIM.round}/${H.set.rounds}`;
+      if (H.st === 'finished') return { big: 'GAME OVER', sub: '', mood: '' };
+      if (H.st !== 'running') return null;
+      if (SIM.phase === 'show') return { big: 'WATCH!', sub: `${R} · ${L} moves`, mood: 'ice' };
+      if (SIM.phase === 'input') return { big: 'YOUR TURN!', sub: `${R} · ${Math.max(0, Math.ceil((SIM.len - (now - SIM.at)) / 1000))} s left`, mood: 'go' };
+      return { big: 'Results', sub: R, mood: '' };
+    },
+    phone(t) {
+      const s = t.s, L = SIM.seq.length;
+      if (SIM.phase === 'show') return { big: '👀', sub: 'Watch the screen…', bg: '#17213d' };
+      if (SIM.phase === 'input') return s.out ? { big: '❌', sub: 'Not this time — wait for the next round', bg: '#4a1620' } : s.done ? { big: '✅', sub: 'You got it!', bg: '#14301f' } : { big: `${s.inputs.length}/${L}`, sub: 'Tilt to repeat the moves, level between each', meter: s.inputs.length / L };
+      return { big: SIM.phase === 'result' ? (s.gain ? '+' + s.gain : '–') : '🧠', sub: `${s.pts} points`, bg: null };
+    },
+    ...zeroBtn,
+    draw(t, c, w, h, now, dt) {
+      const s = t.s, L = SIM.seq.length, e = now - SIM.at, show = SIM.phase === 'show', input = SIM.phase === 'input', result = SIM.phase === 'result';
+      bg(c, w, h, '#1a1633', '#100e22');
+      if (!L || SIM.phase === 'idle' || H.st === 'idle') { txt(c, 'Ready — press Start', w / 2, h / 2 + 5, 16, '#cfd6e6'); return; }
+      const box = Math.min(34, (w - 24) / L - 6), gap = 6, rowW = L * (box + gap) - gap, x0 = (w - rowW) / 2;
+      const beat = Math.floor((e - 900) / 800), lit = show && beat >= 0 && beat < L && ((e - 900) % 800) < 600;
+      txt(c, show ? 'WATCH…' : input ? 'YOUR TURN' : 'RESULT', 10, 16, 12, show ? '#9bb4ff' : input ? '#4cd37b' : '#cfd6e6', 'left', 800);
+      for (let i = 0; i < L; i++) {                                    // the run to remember
+        const x = x0 + i * (box + gap), reveal = result || (show && i < beat) || (show && i === beat && lit);
+        c.fillStyle = reveal ? DIRS[SIM.seq[i]].c : '#2a2650'; rr(c, x, 26, box, box, 7); c.fill();
+        txt(c, reveal ? DIRS[SIM.seq[i]].a : '?', x + box / 2, 26 + box * .68, box * .55, reveal ? '#10121a' : '#6a64a8');
+      }
+      if (show && lit) txt(c, DIRS[SIM.seq[beat]].a, w / 2, 112, 62, DIRS[SIM.seq[beat]].c, 'center', 800);
+      if (input || result) {
+        for (let i = 0; i < L; i++) {                                  // what this player did
+          const x = x0 + i * (box + gap), v = s.inputs[i], ok = v !== undefined && v === SIM.seq[i];
+          c.strokeStyle = v === undefined ? '#3a3568' : ok ? '#4cd37b' : '#ff6b6b'; c.lineWidth = 2; rr(c, x, 130, box, box, 7); c.stroke();
+          if (v !== undefined) txt(c, DIRS[v].a, x + box / 2, 130 + box * .68, box * .55, ok ? DIRS[v].c : '#ff6b6b');
+        }
+        if (input && now - s.flash < 250 && s.inputs.length) { const v = s.inputs[s.inputs.length - 1]; txt(c, DIRS[v].a, w / 2, 112, 54, DIRS[v].c, 'center', 800); }
+        if (s.out) txt(c, '✗ not quite', w / 2, 118, 20, '#ff6b6b', 'center', 800);
+        else if (s.done) txt(c, `✓ perfect${result ? ' +' + s.gain : ''}`, w / 2, 118, 20, '#4cd37b', 'center', 800);
+      }
+    }
+  };
+
+  /* ======================================================================
+     14. POSE MATCH — copy the pose shown on the screen and hold still
+     ====================================================================== */
+  const POSES = [
+    { id: 'up', short: 'Screen up', say: 'Lay it flat, screen facing the sky' },
+    { id: 'down', short: 'Screen down', say: 'Lay it flat, screen facing the floor' },
+    { id: 'top', short: 'Upright', say: 'Hold it upright, like making a call' },
+    { id: 'inv', short: 'Upside down', say: 'Hold it upside down' },
+    { id: 'sideL', short: 'Side ◀', say: 'On its side, top pointing left' },
+    { id: 'sideR', short: 'Side ▶', say: 'On its side, top pointing right' }
+  ];
+  const poseOf = g => { const m = Math.hypot(g.x, g.y, g.z) || 1, ax = Math.abs(g.x) / m, ay = Math.abs(g.y) / m, az = Math.abs(g.z) / m; if (az > .8) return g.z > 0 ? 'up' : 'down'; if (ay > .8) return g.y > 0 ? 'top' : 'inv'; if (ax > .8) return g.x > 0 ? 'sideL' : 'sideR'; return null; };
+  function phoneIcon(c, x, y, id, sz, col) {
+    c.save(); c.translate(x, y);
+    if (id === 'up' || id === 'down') {                              // lying flat: a squashed phone seen from the side
+      c.fillStyle = id === 'up' ? '#1f6feb' : '#5a6270'; c.beginPath(); c.moveTo(-sz * .55, sz * .12); c.lineTo(sz * .55, sz * .12); c.lineTo(sz * .78, -sz * .2); c.lineTo(-sz * .32, -sz * .2); c.closePath(); c.fill();
+      c.strokeStyle = col || '#dbe4f0'; c.lineWidth = 3; c.stroke();
+      c.fillStyle = '#fff'; c.fillRect(-sz * .1, -sz * .13, sz * .3, 3);
+      if (id === 'down') { c.fillStyle = '#222'; c.beginPath(); c.arc(sz * .45, -sz * .02, 3.5, 0, TAU); c.fill(); }
+    } else {
+      c.rotate(id === 'inv' ? Math.PI : id === 'sideL' ? -Math.PI / 2 : id === 'sideR' ? Math.PI / 2 : 0);
+      c.fillStyle = '#1f6feb'; rr(c, -sz * .3, -sz * .55, sz * .6, sz * 1.1, sz * .1); c.fill(); c.strokeStyle = col || '#dbe4f0'; c.lineWidth = 3; c.stroke();
+      c.fillStyle = '#fff'; c.fillRect(-sz * .09, -sz * .46, sz * .18, 3);
+    }
+    c.restore();
+  }
+  const PM = { phase: 'idle', round: 0, at: 0, len: 0, target: 'up', last: '' };
+  GAMES.pose = {
+    id: 'pose', emoji: '🗿', title: 'Pose Match', accent: '#2dd4bf', mode: 'rounds', better: 'high', arenaH: 170,
+    blurb: 'Copy the pose on the screen with your phone — the fastest wins the round.',
+    how: 'A pose appears on the screen: flat, upright, upside down, on its side… Move your phone into that pose and hold it still for a moment. The quicker you match it, the more points you get.',
+    settings: [{ k: 'rounds', type: 'number', min: 1, max: 15, val: 8, label: 'Rounds' }],
+    reset(t) { t.s = { pts: 0, done: false, since: 0, cur: null, gain: 0, hist: [], gs: null, g0: null, gx: 1 }; PM.phase = 'idle'; PM.round = 0; },
+    onStart() { PM.round = 0; PM.last = ''; this.nextRound(performance.now()); },
+    nextRound(now) {
+      PM.round++; let id; do { id = POSES[(Math.random() * POSES.length) | 0].id; } while (id === PM.last); PM.last = PM.target = id;
+      PM.phase = 'intro'; PM.at = now; PM.len = 1600; H.teams.forEach(t => { Object.assign(t.s, { done: false, since: 0, gain: 0 }); }); H.beep(700, 120); H.pushAll();
+    },
+    tick(now) {
+      if (H.st !== 'running') return;
+      const e = now - PM.at;
+      if (PM.phase === 'intro' && e >= PM.len) { PM.phase = 'go'; PM.at = now; PM.len = 9000; H.beep(900, 200, .15); H.pushAll(); }
+      else if (PM.phase === 'go' && (e >= PM.len || H.teams.every(t => t.s.done))) {
+        H.teams.forEach(t => t.s.hist.push(t.s.gain)); PM.phase = 'result'; PM.at = now; PM.len = 2300; H.beep(520, 200); H.pushAll();
+      } else if (PM.phase === 'result' && e >= PM.len) {
+        if (PM.round >= H.set.rounds) { PM.phase = 'done'; H.finish(false); } else this.nextRound(now);
+      }
+    },
+    onFrame(t, f, d, dt, now) {
+      tiltFrame(t, f); const s = t.s; if (!s.gs) return;
+      s.cur = poseOf(s.gs); s.gx = f.gx;
+      if (H.st !== 'running' || PM.phase !== 'go' || s.done) return;
+      const still = f.gx < 1.35 && f.gn > .7;
+      if (s.cur === PM.target && still) {
+        if (!s.since) s.since = now;
+        else if (now - s.since >= 800) {                              // matched and held: quicker = more points
+          s.done = true; s.gain = Math.max(1, Math.round(10 * (1 - (now - PM.at) / PM.len))); s.pts += s.gain; H.beep(1000, 150, .12); H.log(t, `✓ ${POSES.find(p => p.id === PM.target).short} (+${s.gain})`);
+        }
+      } else s.since = 0;
+    },
+    score: t => t.s.pts, scoreText: t => t.s.pts + ' pts',
+    sub: t => t.s.hist.length ? 'Rounds: ' + t.s.hist.map(x => x || '✗').join(' · ') : 'Match the pose, then hold still',
+    clock(now) {
+      const R = `Round ${PM.round}/${H.set.rounds}`;
+      if (H.st === 'finished') return { big: 'GAME OVER', sub: '', mood: '' };
+      if (H.st !== 'running') return null;
+      const p = POSES.find(x => x.id === PM.target);
+      if (PM.phase === 'intro') return { big: 'GET READY…', sub: R, mood: 'ice' };
+      if (PM.phase === 'go') return { big: p.short.toUpperCase(), sub: `${p.say} · ${Math.max(0, Math.ceil((PM.len - (now - PM.at)) / 1000))} s`, mood: 'go' };
+      return { big: 'Results', sub: R, mood: '' };
+    },
+    phone(t) {
+      const s = t.s, p = POSES.find(x => x.id === PM.target);
+      if (PM.phase === 'go') return s.done ? { big: '✅', sub: `+${s.gain}`, bg: '#14301f' } : { big: p.short, sub: p.say, meter: s.since ? clamp((performance.now() - s.since) / 800, 0, 1) : 0 };
+      if (PM.phase === 'intro') return { big: '👀', sub: 'Get ready…' };
+      return { big: PM.phase === 'result' ? (s.gain ? '+' + s.gain : '–') : '🗿', sub: `${s.pts} points`, bg: null };
+    },
+    ...zeroBtn,
+    draw(t, c, w, h, now, dt) {
+      const s = t.s, p = POSES.find(x => x.id === PM.target), go = PM.phase === 'go';
+      bg(c, w, h, '#0f2a2e', '#0a1618');
+      if (H.st === 'idle' || PM.phase === 'idle') { txt(c, 'Ready — press Start', w / 2, h / 2 + 5, 16, '#cfd6e6'); return; }
+      const lx = w * .27, rx = w * .73, cy = 86;
+      txt(c, 'COPY THIS', lx, 22, 11, '#7fe3d4', 'center', 800); txt(c, 'YOU', rx, 22, 11, '#9fb3b6', 'center', 800);
+      phoneIcon(c, lx, cy, PM.target, 56, '#7fe3d4'); txt(c, p.short, lx, 150, 15, '#fff');
+      const match = s.cur === PM.target, col = s.done ? '#4cd37b' : match ? '#ffd166' : '#6b7a7d';
+      phoneIcon(c, rx, cy, s.cur || 'up', 56, col);
+      if (!s.cur) txt(c, '…', rx, cy + 10, 30, '#6b7a7d');
+      if (go && !s.done && s.since) { const f = clamp((now - s.since) / 800, 0, 1); c.strokeStyle = '#ffd166'; c.lineWidth = 5; c.beginPath(); c.arc(rx, cy, 50, -Math.PI / 2, -Math.PI / 2 + TAU * f); c.stroke(); }
+      if (s.done) { txt(c, `✓ +${s.gain}`, rx, 150, 20, '#4cd37b', 'center', 800); c.strokeStyle = '#4cd37b'; c.lineWidth = 5; c.beginPath(); c.arc(rx, cy, 50, 0, TAU); c.stroke(); }
+      else if (PM.phase === 'result') txt(c, '✗ missed', rx, 150, 16, '#ff6b6b', 'center', 800);
+      else txt(c, match ? 'hold still…' : s.cur ? 'not yet' : '', rx, 150, 14, col);
+      if (PM.phase === 'intro') { c.fillStyle = 'rgba(0,0,0,.4)'; c.fillRect(0, 0, w, h); txt(c, 'GET READY', w / 2, h / 2 + 8, 28, '#fff', 'center', 800); }
+    }
+  };
+  GAMES.flap.debug = () => FL; GAMES.simon.debug = () => SIM; GAMES.pose.debug = () => ({ PM, POSES, poseOf });
+
   window.GAMES = GAMES;
 })();
