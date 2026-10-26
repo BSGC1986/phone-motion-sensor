@@ -488,5 +488,313 @@
     }
   };
 
+  /* ======================================================================
+     TILT CONTROLS — shared by Tilt Racer, Marble Maze and Catch the Stars.
+     The phone is a controller: "zero" remembers how it is being held, then tilting away from that steers.
+     Works for a phone held like a steering wheel (upright) or lying flat in the hands like a tray.
+     ====================================================================== */
+  const wrapA = a => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
+  const rng = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  function tiltFrame(t, f) {                                        // keep a lightly smoothed gravity vector
+    const s = t.s; if (f.ax == null) return;
+    const k = s.gs ? .4 : 1; s.gs = s.gs || { x: 0, y: 0, z: 9.81 };
+    s.gs.x += (f.ax - s.gs.x) * k; s.gs.y += (f.ay - s.gs.y) * k; s.gs.z += (f.az - s.gs.z) * k;
+    if (!s.g0) s.g0 = { ...s.gs };
+    s.sdeg = ctl(s, 30).deg;
+  }
+  const zeroTilt = t => { if (t.s.gs) t.s.g0 = { ...t.s.gs }; };
+  function ctl(s, full) {                                           // → steer −1..1 (right +), throttle −1..1 (lean forward +), steer angle in degrees
+    const g = s.gs, g0 = s.g0; if (!g || !g0) return { st: 0, th: 0, deg: 0 };
+    const flat = Math.abs(g0.z) >= Math.abs(g0.x) && Math.abs(g0.z) >= Math.abs(g0.y);
+    let sd, pd;
+    if (flat) {                                                      // lying flat: roll steers, nose-down = forward
+      sd = -(Math.atan2(g.x, g.z) - Math.atan2(g0.x, g0.z));
+      pd = -(Math.atan2(g.y, g.z) - Math.atan2(g0.y, g0.z));
+    } else {                                                         // upright wheel: turning the wheel steers, pushing the top away = forward
+      sd = -wrapA(Math.atan2(g.x, g.y) - Math.atan2(g0.x, g0.y));
+      pd = Math.atan2(g.z, Math.hypot(g.x, g.y)) - Math.atan2(g0.z, Math.hypot(g0.x, g0.y));
+    }
+    const lim = (x, fullDeg) => { const a = Math.abs(x) * 180 / Math.PI, m = Math.max(0, (a - 3) / Math.max(1, fullDeg - 3)); return Math.sign(x) * Math.min(1, m); };
+    return { st: lim(sd, full), th: lim(pd, 25), deg: sd * 180 / Math.PI };
+  }
+  const tiltSens = def => ({
+    label: 'Tilt for full steering', unit: '°', min: 10, max: 60, step: 1, def, scale: 60, dp: 0,
+    hint: 'Lower = more sensitive: a smaller tilt steers all the way. The bar shows how far the phone is tilted.',
+    signal: t => Math.abs(t.s.sdeg || 0)
+  });
+  const zeroBtn = { extra: () => '<button class="alt rz" style="padding:6px">↺ Re-zero (hold the phone comfortably, then press)</button>', bind(t, el) { el.querySelector('.rz').onclick = () => zeroTilt(t); } };
+  function starPath(c, x, y, r) { c.beginPath(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rad = i % 2 ? r * .45 : r; c.lineTo(x + Math.cos(a) * rad, y + Math.sin(a) * rad); } c.closePath(); }
+  const countdown = (c, w, h, now, goAt) => {                       // 3 · 2 · 1 · GO! overlay
+    if (now < goAt) { const n = Math.ceil((goAt - now) / 1000); c.fillStyle = 'rgba(0,0,0,.35)'; c.fillRect(0, 0, w, h); txt(c, String(n), w / 2, h / 2 + 22, 70, '#fff', 'center', 800); txt(c, 'hold your phone comfortably', w / 2, h / 2 + 46, 12, '#cfd6e6'); return true; }
+    if (now < goAt + 800) { txt(c, 'GO!', w / 2, h / 2 + 22, 70, '#4cd37b', 'center', 800); }
+    return false;
+  };
+
+  /* ======================================================================
+     8. TILT RACER — steer a car (or a spaceship) down a course; lean forward to go faster
+     ====================================================================== */
+  let RC = null;                                                    // the course, shared so every racer faces the same one
+  function makeCourse() {
+    const r = rng((Math.random() * 1e9) | 0), obs = [], slots = [-.8, -.4, 0, .4, .8], L = 900;
+    for (let z = 70; z < L - 50; z += 22 + r() * 14) {
+      const free = slots.slice(), n = r() < .35 ? 2 : 1;
+      for (let i = 0; i < n; i++) obs.push({ z, x: free.splice((r() * free.length) | 0, 1)[0] + (r() - .5) * .12, k: 'o' });
+      if (r() < .3) obs.push({ z: z + 9, x: free[(r() * free.length) | 0], k: 'b' });   // boost pad
+    }
+    return { L, obs, goAt: 0 };
+  }
+  function stepRacer(t, now) {
+    const s = t.s; if (!RC || H.st !== 'running') return;
+    if (s.last == null) s.last = now;
+    let dt = (now - s.last) / 1000; if (dt <= 0) return; dt = Math.min(dt, .1); s.last = now;
+    if (!s.zeroed && now >= RC.goAt) { zeroTilt(t); s.zeroed = true; }
+    if (s.finished) { s.v = Math.max(0, s.v - 15 * dt); s.z += s.v * dt * .2; return; }
+    if (now < RC.goAt) return;
+    const VMAX = 40, c = ctl(s, H.sv(t));
+    const target = VMAX * clamp(.55 + c.th * .45, 0, 1);              // cruise by default; lean forward = faster, back = brake
+    s.v += (target - s.v) * Math.min(1, dt * (target > s.v ? 1.6 : 3));
+    if (now - s.boostT < 1200) s.v = Math.min(VMAX * 1.15, s.v + 25 * dt);
+    s.x = clamp(s.x + c.st * (.35 + 1.3 * s.v / VMAX) * dt, -1, 1);
+    s.steer = c.st;
+    if (Math.abs(s.x) > .92) s.v *= (1 - 1.2 * dt);                   // the verge slows you down
+    s.z += s.v * dt;
+    for (const o of RC.obs) {
+      if (o.z < s.z - 3 || o.z > s.z + 3 || s.hitSet.has(o) || Math.abs(o.x - s.x) > .24) continue;
+      s.hitSet.add(o);
+      if (o.k === 'b') { s.boostT = now; H.beep(900, 120, .1); }
+      else { s.v = Math.min(s.v, VMAX * .2); s.hitT = now; s.hits++; H.beep(160, 160, .15, 'square'); }
+    }
+    if (s.z >= RC.L) { s.finished = true; s.finT = now - RC.goAt; H.beep(660, 150); H.log(t, `🏁 finished in ${(s.finT / 1000).toFixed(1)} s`); }
+  }
+  GAMES.racer = {
+    id: 'racer', emoji: '🏎️', title: 'Tilt Racer', accent: '#f43f5e', mode: 'timed', defDur: 90, better: 'high', arenaH: 260,
+    blurb: 'Steer a car or spaceship down the course by tilting your phone.',
+    how: 'Hold the phone like a steering wheel (or flat in your hands). It zeroes after the 3-2-1, so hold it comfortably: turn it to steer, lean the top forward to go faster, back to slow down. Dodge the cones, hit the blue boost pads. First to the finish wins; otherwise furthest wins.',
+    settings: [{ k: 'space', type: 'check', label: 'Space theme (spaceship through an asteroid field)', val: false }],
+    sens: tiltSens(30),
+    reset(t) { t.s = { x: 0, v: 0, z: 0, steer: 0, hits: 0, hitT: -1e9, boostT: -1e9, hitSet: new Set(), finished: false, finT: 0, zeroed: false, last: null, gs: null, g0: null, sdeg: 0 }; },
+    onBegin(now) { RC = makeCourse(); RC.goAt = now + 3000; H.teams.forEach(t => { t.s.last = now; t.s.zeroed = false; }); },
+    onFrame(t, f) { tiltFrame(t, f); },
+    tick(now) {
+      if (H.st !== 'running') return;
+      H.teams.forEach(t => stepRacer(t, now));
+      if (H.teams.length && H.teams.every(t => t.s.finished)) H.finish(false);
+    },
+    rankKey: t => t.s.finished ? 1e9 - t.s.finT : t.s.z,
+    score: t => t.s.finished ? 1e9 - t.s.finT : t.s.z,
+    scoreText: t => t.s.finished ? `🏁 ${(t.s.finT / 1000).toFixed(1)} s` : `${Math.round(t.s.z)} m`,
+    sub: t => `${Math.round(t.s.v * 3.6)} km/h · ${t.s.hits} crash${t.s.hits === 1 ? '' : 'es'}${RC ? ` · ${Math.min(100, Math.round(t.s.z / RC.L * 100))}%` : ''}`,
+    phone: (t, now) => {
+      const s = t.s, go = RC && now >= RC.goAt;
+      return { big: s.finished ? '🏁' : (RC && H.st === 'running' && !go) ? Math.ceil((RC.goAt - now) / 1000) : go ? Math.min(100, Math.round(s.z / RC.L * 100)) + '%' : 'Ready',
+               sub: s.finished ? `Finished in ${(s.finT / 1000).toFixed(1)} s` : 'Turn to steer · lean forward = faster', meter: clamp(s.v / 46, 0, 1),
+               bg: now - s.hitT < 400 ? '#4a1620' : now - s.boostT < 800 ? '#10294d' : null };
+    },
+    ...zeroBtn,
+    draw(t, c, w, h, now, dt) {
+      const s = t.s; stepRacer(t, now);
+      const space = !!H.set.space, cx = w / 2, half = Math.min(w * .36, 105), sc = 3.6, carY = h * .78, z = s.z;
+      if (space) { bg(c, w, h, '#04060f', '#0a1028'); for (let i = 0; i < 46; i++) { c.fillStyle = `rgba(255,255,255,${.3 + (i % 3) * .25})`; c.fillRect((i * 97) % w, (((i * 53) + z * sc * (.3 + (i % 3) * .2)) % h), 1.6, 1.6 + (i % 3)); } }
+      else { bg(c, w, h, '#1d6a38', '#16502a'); const off = (z * sc) % 44; c.fillStyle = 'rgba(255,255,255,.035)'; for (let y = -44 + off; y < h; y += 44) c.fillRect(0, y, w, 22); }
+      c.fillStyle = space ? '#121833' : '#3a404b'; c.fillRect(cx - half, 0, half * 2, h);
+      const off2 = (z * sc) % 36;                                   // kerbs and lane dashes scroll with the car
+      for (let y = -36 + off2; y < h; y += 36) { c.fillStyle = (Math.round((y - off2) / 36) % 2) ? '#e8eaf0' : '#e5484d'; c.fillRect(cx - half - 4, y, 4, 18); c.fillRect(cx + half, y, 4, 18); c.fillStyle = 'rgba(255,255,255,.55)'; c.fillRect(cx - half / 3 - 1, y + 4, 2, 14); c.fillRect(cx + half / 3 - 1, y + 4, 2, 14); }
+      if (RC) {
+        const fy = carY - (RC.L - z) * sc;                           // finish line
+        if (fy > -20 && fy < h + 20) for (let i = 0; i < 12; i++) for (let j = 0; j < 2; j++) { c.fillStyle = (i + j) % 2 ? '#111' : '#fff'; c.fillRect(cx - half + i * (half * 2 / 12), fy + j * 9 - 9, half * 2 / 12, 9); }
+        for (const o of RC.obs) {
+          const y = carY - (o.z - z) * sc; if (y < -24 || y > h + 24) continue;
+          const x = cx + o.x * half * .9;
+          if (o.k === 'b') {
+            c.fillStyle = space ? 'rgba(80,200,255,.25)' : '#1d6fe0'; rr(c, x - 15, y - 12, 30, 24, 5); c.fill();
+            c.strokeStyle = '#9fe8ff'; c.lineWidth = 2.5; for (let q = 0; q < 2; q++) { c.beginPath(); c.moveTo(x - 7, y + 6 - q * 8); c.lineTo(x, y - 2 - q * 8); c.lineTo(x + 7, y + 6 - q * 8); c.stroke(); }
+          } else if (space) { c.fillStyle = '#6b7385'; c.beginPath(); c.arc(x, y, 13, 0, TAU); c.fill(); c.fillStyle = '#4b5263'; c.beginPath(); c.arc(x - 4, y - 3, 4, 0, TAU); c.arc(x + 5, y + 4, 3, 0, TAU); c.fill(); }
+          else { c.fillStyle = '#ff7a1a'; c.beginPath(); c.moveTo(x, y - 14); c.lineTo(x + 11, y + 10); c.lineTo(x - 11, y + 10); c.closePath(); c.fill(); c.fillStyle = '#fff'; c.fillRect(x - 6, y - 2, 12, 4); c.fillStyle = '#c24d00'; c.fillRect(x - 13, y + 9, 26, 4); }
+        }
+      }
+      const hit = now - s.hitT < 300, boost = now - s.boostT < 1200;
+      if (boost || s.v > 37) { c.strokeStyle = 'rgba(255,255,255,.4)'; c.lineWidth = 1.5; for (let i = 0; i < 9; i++) { const lx = cx - half + ((i * 67) % (half * 2)), ly = (((i * 41) + now * .9) % h); c.beginPath(); c.moveTo(lx, ly); c.lineTo(lx, ly + 22); c.stroke(); } }
+      const px = cx + s.x * half * .9 + (hit ? (Math.random() - .5) * 7 : 0), py = carY + (hit ? (Math.random() - .5) * 4 : 0);
+      c.save(); c.translate(px, py); c.rotate(s.steer * .28);
+      if (boost) { c.fillStyle = 'rgba(90,200,255,.35)'; c.beginPath(); c.ellipse(0, 6, 19, 30, 0, 0, TAU); c.fill(); }
+      if (space) {
+        c.fillStyle = `rgba(255,${140 + Math.random() * 90 | 0},60,.9)`; c.beginPath(); c.moveTo(-6, 14); c.lineTo(0, 14 + 8 + s.v * .55 * Math.random() + 6); c.lineTo(6, 14); c.fill();
+        c.fillStyle = t.color; c.beginPath(); c.moveTo(0, -20); c.lineTo(14, 14); c.lineTo(0, 8); c.lineTo(-14, 14); c.closePath(); c.fill();
+        c.fillStyle = '#bfe9ff'; c.beginPath(); c.ellipse(0, -2, 4, 7, 0, 0, TAU); c.fill();
+      } else {
+        c.fillStyle = '#111'; c.fillRect(-12, -13, 4, 9); c.fillRect(8, -13, 4, 9); c.fillRect(-12, 6, 4, 9); c.fillRect(8, 6, 4, 9);
+        c.fillStyle = t.color; rr(c, -9, -18, 18, 36, 6); c.fill();
+        c.fillStyle = 'rgba(190,235,255,.9)'; rr(c, -6, -9, 12, 8, 3); c.fill(); c.fillStyle = 'rgba(0,0,0,.25)'; c.fillRect(-6, 4, 12, 9);
+        c.fillStyle = '#fff6b0'; c.fillRect(-7, -19, 4, 2); c.fillRect(3, -19, 4, 2);
+      }
+      c.restore();
+      if (hit) { c.fillStyle = 'rgba(255,60,60,.22)'; c.fillRect(0, 0, w, h); }
+      if (RC) { c.fillStyle = 'rgba(0,0,0,.4)'; c.fillRect(8, 6, w - 16, 6); c.fillStyle = t.color; c.fillRect(8, 6, (w - 16) * clamp(z / RC.L, 0, 1), 6); }
+      txt(c, `${Math.round(s.v * 3.6)} km/h`, 10, h - 8, 13, '#fff', 'left');
+      if (!RC || H.st === 'idle') txt(c, 'Ready — press Start', w / 2, h / 2, 16, '#fff');
+      else if (H.st === 'running' && !s.finished) countdown(c, w, h, now, RC.goAt);
+      if (s.finished) { c.fillStyle = 'rgba(0,0,0,.4)'; c.fillRect(0, h / 2 - 30, w, 56); txt(c, `🏁 ${(s.finT / 1000).toFixed(1)} s`, w / 2, h / 2 + 8, 30, '#ffd166', 'center', 800); }
+    }
+  };
+
+  /* ======================================================================
+     9. MARBLE MAZE — tilt the phone to roll a marble out of a maze; each cleared maze is bigger
+     ====================================================================== */
+  const MZ_SIZES = [[4, 3], [5, 4], [6, 4], [7, 5], [8, 5], [9, 6], [10, 7]];
+  let MZ = { seed: 1, cache: {}, goAt: 0 };
+  function genMaze(level) {
+    if (MZ.cache[level]) return MZ.cache[level];
+    const [cols, rows] = MZ_SIZES[Math.min(level, MZ_SIZES.length - 1)], r = rng(MZ.seed + level * 7919);
+    const vw = Array.from({ length: rows }, () => Array(cols + 1).fill(true)), hw = Array.from({ length: rows + 1 }, () => Array(cols).fill(true));
+    const seen = Array.from({ length: rows }, () => Array(cols).fill(false)), stack = [[0, 0]]; seen[0][0] = true;
+    while (stack.length) {                                           // depth-first "recursive backtracker"
+      const [x, y] = stack[stack.length - 1], nb = [];
+      if (x > 0 && !seen[y][x - 1]) nb.push([x - 1, y, 'l']); if (x < cols - 1 && !seen[y][x + 1]) nb.push([x + 1, y, 'r']);
+      if (y > 0 && !seen[y - 1][x]) nb.push([x, y - 1, 'u']); if (y < rows - 1 && !seen[y + 1][x]) nb.push([x, y + 1, 'd']);
+      if (!nb.length) { stack.pop(); continue; }
+      const [nx, ny, d] = nb[(r() * nb.length) | 0]; seen[ny][nx] = true;
+      if (d === 'l') vw[y][x] = false; else if (d === 'r') vw[y][x + 1] = false; else if (d === 'u') hw[y][x] = false; else hw[y + 1][x] = false;
+      stack.push([nx, ny]);
+    }
+    const segs = [];
+    for (let y = 0; y < rows; y++) for (let x = 0; x <= cols; x++) if (vw[y][x]) segs.push([x, y, x, y + 1]);
+    for (let y = 0; y <= rows; y++) for (let x = 0; x < cols; x++) if (hw[y][x]) segs.push([x, y, x + 1, y]);
+    return (MZ.cache[level] = { cols, rows, segs, gx: cols - .5, gy: rows - .5 });
+  }
+  function stepMaze(t, now) {
+    const s = t.s; if (H.st !== 'running') return;
+    if (s.last == null) s.last = now;
+    let dt = (now - s.last) / 1000; if (dt <= 0) return; dt = Math.min(dt, .1); s.last = now;
+    if (!s.zeroed && now >= MZ.goAt) { zeroTilt(t); s.zeroed = true; }
+    if (now < MZ.goAt) return;
+    const mz = genMaze(s.level), c = ctl(s, H.sv(t)), R = .2, A = 20, n = Math.ceil(dt / .008), h = dt / n, m = s.m;
+    for (let i = 0; i < n; i++) {
+      m.vx += c.st * A * h; m.vy += -c.th * A * h;                  // nose-down rolls the marble up the screen
+      const damp = 1 - 1.3 * h; m.vx *= damp; m.vy *= damp;
+      const sp = Math.hypot(m.vx, m.vy); if (sp > 6) { m.vx *= 6 / sp; m.vy *= 6 / sp; }
+      m.x += m.vx * h; m.y += m.vy * h;
+      for (const g of mz.segs) {                                    // push the marble out of any wall it overlaps
+        const px = clamp(m.x, Math.min(g[0], g[2]), Math.max(g[0], g[2])), py = clamp(m.y, Math.min(g[1], g[3]), Math.max(g[1], g[3]));
+        const dx = m.x - px, dy = m.y - py, d2 = dx * dx + dy * dy; if (d2 >= R * R || d2 === 0) continue;
+        const d = Math.sqrt(d2), nx = dx / d, ny = dy / d; m.x = px + nx * R; m.y = py + ny * R;
+        const vn = m.vx * nx + m.vy * ny; if (vn < 0) { m.vx -= 1.35 * vn * nx; m.vy -= 1.35 * vn * ny; }
+      }
+    }
+    s.dist += Math.hypot(m.vx, m.vy) * dt;
+    const dg = Math.hypot(m.x - mz.gx, m.y - mz.gy); s.prog = clamp(1 - dg / Math.hypot(mz.cols, mz.rows), 0, 1);
+    if (dg < .4) {                                                   // reached the goal
+      s.cleared++; s.level++; s.flash = now; s.lastClear = now - MZ.goAt; s.m = { x: .5, y: .5, vx: 0, vy: 0 }; s.trail = [];
+      H.beep(784, 140, .12); setTimeout(() => H.beep(1046, 200, .12), 150); H.log(t, `cleared maze ${s.cleared}`);
+    }
+  }
+  GAMES.maze = {
+    id: 'maze', emoji: '🔮', title: 'Marble Maze', accent: '#38bdf8', mode: 'timed', defDur: 90, better: 'high', arenaH: 240,
+    blurb: 'Tilt your phone to roll the marble out of the maze — each one is bigger.',
+    how: 'Hold the phone flat in both hands. After the 3-2-1 it zeroes: tip it to roll the marble toward the glowing star. Walls stop the marble. Clear as many mazes as you can before time runs out.',
+    settings: [],
+    sens: tiltSens(20),
+    reset(t) { t.s = { m: { x: .5, y: .5, vx: 0, vy: 0 }, level: 0, cleared: 0, prog: 0, dist: 0, flash: -1e9, lastClear: 0, trail: [], zeroed: false, last: null, gs: null, g0: null, sdeg: 0, ang: 0 }; },
+    onBegin(now) { MZ = { seed: (Math.random() * 1e9) | 0, cache: {}, goAt: now + 3000 }; H.teams.forEach(t => { t.s.last = now; t.s.zeroed = false; }); },
+    onFrame(t, f) { tiltFrame(t, f); },
+    tick(now) { if (H.st === 'running') H.teams.forEach(t => stepMaze(t, now)); },
+    rankKey: t => t.s.cleared * 1e6 - t.s.lastClear + t.s.prog * 1000,
+    score: t => t.s.cleared * 1e6 - t.s.lastClear + t.s.prog * 1000, played: t => t.s.cleared > 0 || t.s.dist > 1,
+    scoreText: t => String(t.s.cleared),
+    sub: t => `Maze ${t.s.level + 1} · ${Math.round(t.s.prog * 100)}% of the way`,
+    phone: (t, now) => ({ big: t.s.cleared, sub: `Mazes cleared · now on maze ${t.s.level + 1}`, meter: t.s.prog, bg: now - t.s.flash < 800 ? '#14301f' : null }),
+    ...zeroBtn,
+    draw(t, c, w, h, now, dt) {
+      const s = t.s; stepMaze(t, now);
+      const mz = genMaze(s.level), cs = Math.min((w - 14) / mz.cols, (h - 14) / mz.rows), ox = (w - cs * mz.cols) / 2, oy = (h - cs * mz.rows) / 2;
+      bg(c, w, h, '#101521', '#090d15');
+      c.fillStyle = '#161d2e'; c.fillRect(ox, oy, cs * mz.cols, cs * mz.rows);
+      const pulse = 1 + .12 * Math.sin(now / 250), gx = ox + mz.gx * cs, gy = oy + mz.gy * cs;       // the goal
+      const gr = c.createRadialGradient(gx, gy, 1, gx, gy, cs * .6); gr.addColorStop(0, 'rgba(255,214,102,.9)'); gr.addColorStop(1, 'rgba(255,214,102,0)');
+      c.fillStyle = gr; c.beginPath(); c.arc(gx, gy, cs * .6 * pulse, 0, TAU); c.fill();
+      c.fillStyle = '#ffd166'; starPath(c, gx, gy, cs * .26); c.fill();
+      c.strokeStyle = '#8fa3c7'; c.lineWidth = Math.max(2, cs * .08); c.lineCap = 'round'; c.beginPath();
+      for (const g of mz.segs) { c.moveTo(ox + g[0] * cs, oy + g[1] * cs); c.lineTo(ox + g[2] * cs, oy + g[3] * cs); }
+      c.stroke();
+      const m = s.m, mx = ox + m.x * cs, my = oy + m.y * cs;
+      s.trail.push([mx, my]); if (s.trail.length > 14) s.trail.shift();
+      s.trail.forEach((p, i) => { c.fillStyle = t.color; c.globalAlpha = i / s.trail.length * .25; c.beginPath(); c.arc(p[0], p[1], cs * .17 * i / s.trail.length, 0, TAU); c.fill(); });
+      c.globalAlpha = 1; s.ang += (m.vx * dt) / .2;
+      drawBall(c, mx, my, cs * .2, t.color, s.ang);
+      txt(c, `Maze ${s.level + 1}`, 8, 16, 12, '#8a92a3', 'left');
+      if (now - s.flash < 900) txt(c, 'CLEAR! ✨', w / 2, h / 2, 30, '#ffd166', 'center', 800);
+      if (H.st === 'idle') txt(c, 'Ready — press Start', w / 2, h - 8, 13, '#cfd6e6');
+      else if (H.st === 'running') countdown(c, w, h, now, MZ.goAt);
+    }
+  };
+
+  /* ======================================================================
+     10. CATCH THE STARS — slide the basket with your tilt; stars score, bombs hurt
+     ====================================================================== */
+  let ST = { items: [], goAt: 0 };
+  function makeStars() {
+    const r = rng((Math.random() * 1e9) | 0), items = []; let t = .6;
+    while (t < 120) { const k = r(); items.push({ t, x: .08 + r() * .84, k: k < .07 ? 'g' : k < .3 ? 'b' : 's', v: .32 + .0032 * t }); t += .5 + r() * .4; }
+    return items;
+  }
+  function stepStars(t, now) {
+    const s = t.s; if (H.st !== 'running') return;
+    if (s.last == null) s.last = now;
+    let dt = (now - s.last) / 1000; if (dt <= 0) return; dt = Math.min(dt, .1); s.last = now;
+    if (!s.zeroed && now >= ST.goAt) { zeroTilt(t); s.zeroed = true; }
+    if (now < ST.goAt) return;
+    const c = ctl(s, H.sv(t)), run = (now - ST.goAt) / 1000;
+    if (now > s.stun) s.tx = .5 + .5 * clamp(c.st * 1.15, -1, 1);
+    s.bx += (s.tx - s.bx) * Math.min(1, dt * 10);
+    for (let i = s.lo; i < ST.items.length; i++) {
+      const it = ST.items[i], y = (run - it.t) * it.v;
+      if (y < 0) break;                                              // not fallen into view yet (items are in time order)
+      if (s.done.has(i)) { if (i === s.lo) s.lo++; continue; }
+      if (y > .82 && y < 1 && Math.abs(it.x - s.bx) < .115) {
+        s.done.add(i);
+        if (it.k === 'b') { s.pts = Math.max(0, s.pts - 3); s.stun = now + 800; s.bombT = now; H.beep(150, 220, .15, 'sawtooth'); s.pops.push({ x: it.x, txt: '−3', col: '#ff6b6b', a: 0 }); }
+        else { const v = it.k === 'g' ? 3 : 1; s.pts += v; s.catchT = now; H.beep(it.k === 'g' ? 1100 : 760, 80, .1); s.pops.push({ x: it.x, txt: '+' + v, col: '#ffd166', a: 0 }); }
+      } else if (y >= 1) { s.done.add(i); if (i === s.lo) s.lo++; }
+    }
+  }
+  GAMES.stars = {
+    id: 'stars', emoji: '⭐', title: 'Catch the Stars', accent: '#fbbf24', mode: 'timed', defDur: 45, better: 'high', arenaH: 230,
+    blurb: 'Tilt to slide your basket under the falling stars — dodge the bombs!',
+    how: 'Hold the phone like a wheel or flat. After the 3-2-1 it zeroes: tilt left and right to move the basket. Stars score 1 (golden stars 3). A bomb costs 3 points and freezes your basket for a moment.',
+    settings: [],
+    sens: tiltSens(25),
+    reset(t) { t.s = { bx: .5, tx: .5, pts: 0, lo: 0, done: new Set(), pops: [], stun: 0, catchT: -1e9, bombT: -1e9, zeroed: false, last: null, gs: null, g0: null, sdeg: 0 }; },
+    onBegin(now) { ST = { items: makeStars(), goAt: now + 3000 }; H.teams.forEach(t => { t.s.last = now; t.s.zeroed = false; }); },
+    onFrame(t, f) { tiltFrame(t, f); },
+    tick(now) { if (H.st === 'running') H.teams.forEach(t => stepStars(t, now)); },
+    score: t => t.s.pts, scoreText: t => String(t.s.pts),
+    sub: () => 'Stars +1 · golden +3 · bombs −3',
+    phone: (t, now) => ({ big: t.s.pts, sub: 'Tilt left / right to move the basket', bg: now - t.s.bombT < 500 ? '#4a1620' : now - t.s.catchT < 200 ? '#14301f' : null }),
+    ...zeroBtn,
+    draw(t, c, w, h, now, dt) {
+      const s = t.s; stepStars(t, now);
+      bg(c, w, h, '#070b1f', '#1b1f4a');
+      for (let i = 0; i < 30; i++) { c.fillStyle = `rgba(255,255,255,${.25 + .35 * Math.abs(Math.sin(now / 900 + i))})`; c.fillRect((i * 61) % w, (i * 37) % (h * .8), 1.5, 1.5); }
+      c.fillStyle = '#0d1030'; c.fillRect(0, h - 14, w, 14);
+      const run = (now - ST.goAt) / 1000;
+      if (H.st === 'running' && now >= ST.goAt) for (let i = s.lo; i < ST.items.length; i++) {
+        const it = ST.items[i], y = (run - it.t) * it.v; if (y < -.06) break; if (s.done.has(i) || y > 1.08) continue;
+        const x = it.x * w, py = y * (h - 20);
+        if (it.k === 'b') { c.fillStyle = '#23262f'; c.beginPath(); c.arc(x, py, 11, 0, TAU); c.fill(); c.strokeStyle = '#ffb547'; c.lineWidth = 2; c.beginPath(); c.moveTo(x + 4, py - 9); c.quadraticCurveTo(x + 10, py - 16, x + 6, py - 20); c.stroke(); c.fillStyle = '#ff6b6b'; c.beginPath(); c.arc(x + 6, py - 20, 2.5, 0, TAU); c.fill(); c.fillStyle = 'rgba(255,255,255,.35)'; c.beginPath(); c.arc(x - 4, py - 3, 3, 0, TAU); c.fill(); }
+        else { c.fillStyle = it.k === 'g' ? '#ff9f1c' : '#ffd166'; c.shadowColor = '#ffd166'; c.shadowBlur = it.k === 'g' ? 14 : 8; starPath(c, x, py, it.k === 'g' ? 15 : 11); c.fill(); c.shadowBlur = 0; }
+      }
+      const bx = s.bx * w, by = h - 30, stunned = now < s.stun;
+      c.fillStyle = stunned ? '#6b7280' : t.color;                    // the basket
+      c.beginPath(); c.moveTo(bx - 28, by - 4); c.lineTo(bx + 28, by - 4); c.lineTo(bx + 20, by + 14); c.lineTo(bx - 20, by + 14); c.closePath(); c.fill();
+      c.fillStyle = 'rgba(255,255,255,.3)'; c.fillRect(bx - 26, by - 6, 52, 4);
+      if (stunned) txt(c, '💫', bx, by - 12, 18, '#fff');
+      s.pops = s.pops.filter(p => (p.a += dt) < .8);
+      s.pops.forEach(p => { c.globalAlpha = 1 - p.a / .8; txt(c, p.txt, p.x * w, by - 14 - p.a * 40, 18, p.col, 'center', 800); c.globalAlpha = 1; });
+      txt(c, `⭐ ${s.pts}`, 10, 18, 15, '#ffd166', 'left', 800);
+      if (H.st === 'idle') txt(c, 'Ready — press Start', w / 2, h / 2, 16, '#fff');
+      else if (H.st === 'running') countdown(c, w, h, now, ST.goAt);
+    }
+  };
+  GAMES.racer.debug = () => RC; GAMES.maze.debug = () => ({ MZ, genMaze }); GAMES.stars.debug = () => ST;
+
   window.GAMES = GAMES;
 })();

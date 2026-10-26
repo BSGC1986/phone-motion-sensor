@@ -264,7 +264,7 @@
 
   /* ---- home grid ---- */
   function buildHome() {
-    $('games').innerHTML = Object.values(GAMES).map(g => `
+    $('games').innerHTML = Object.values(GAMES).sort((a, b) => (a.mode === 'free') - (b.mode === 'free')).map(g => `
       <button class="gcard" data-id="${g.id}" style="--ga:${g.accent}">
         <span class="gemoji">${g.emoji}</span><b>${g.title}</b><span>${g.blurb}</span>
       </button>`).join('');
@@ -306,7 +306,7 @@
   function buildCard(t) {
     const g = H.game, d = document.createElement('div');
     d.className = 'team'; d.style.setProperty('--tc', t.color);
-    d.innerHTML = `<div class="thead"><span class="tn"></span><span class="ts"></span></div><canvas class="arena"></canvas><div class="tscore${g.small ? ' small' : ''}">0</div><div class="tsub"></div>${g.sens ? `<div class="sens"><div class="sbar"><i class="sfill"></i><b class="smark"></b></div><div class="srow"><span>${g.sens.label}: <b class="sval"></b></span><span class="slive"></span></div><input type="range" class="ssl" min="${g.sens.min}" max="${g.sens.max}" step="${g.sens.step}"></div>` : ''}<div class="textra">${g.extra ? g.extra(t) : ''}</div>`;
+    d.innerHTML = `<div class="thead"><span class="tn"></span><span class="ts"></span></div><canvas class="arena"${g.arenaH ? ` style="height:${g.arenaH}px"` : ''}></canvas><div class="tscore${g.small ? ' small' : ''}">0</div><div class="tsub"></div>${g.sens ? `<div class="sens"><div class="sbar"><i class="sfill"></i><b class="smark"></b></div><div class="srow"><span>${g.sens.label}: <b class="sval"></b></span><span class="slive"></span></div><input type="range" class="ssl" min="${g.sens.min}" max="${g.sens.max}" step="${g.sens.step}"></div>` : ''}<div class="textra">${g.extra ? g.extra(t) : ''}</div>`;
     t.card = d; t.cv = d.querySelector('canvas'); t.cx = t.cv.getContext('2d'); t.ex = d.querySelector('.textra');
     $('teams').appendChild(d);
     if (g.bind) g.bind(t, t.ex);
@@ -460,9 +460,9 @@
     if (!w || !h) return;
     if (cv.width !== Math.round(w * r)) { cv.width = Math.round(w * r); cv.height = Math.round(h * r); }
     const dt = Math.max(0, Math.min(.05, (now - t.lastDraw) / 1000)); t.lastDraw = Math.max(now, t.lastDraw);
-    const k = h / 150;
+    const LH = H.game.arenaH || 150, k = h / LH;                     // each game lays its arena out LH tall, scaled to fit
     cx.setTransform(r * k, 0, 0, r * k, 0, 0);
-    H.game.draw(t, cx, w / k, 150, now, dt);
+    H.game.draw(t, cx, w / k, LH, now, dt);
   }
   const drawTeam = (t, now) => drawOn(t, t.cv, t.cx, now, window);
   function paint() {
