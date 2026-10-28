@@ -1167,6 +1167,203 @@
       if (now - s.flash < 250) { c.strokeStyle = 'rgba(255,255,255,.5)'; c.lineWidth = 3; c.strokeRect(1, 1, w - 2, h - 2); }
     }
   };
+  /* ======================================================================
+     16. GOLF — tilt to aim, swing the phone to hit
+     Top-down holes in metres: the tee is at (0,0), the pin at (0,L), x is sideways (right +), y is towards the pin.
+     ====================================================================== */
+  const HOLES = [
+    { par: 3, L: 115, fw: 36, gr: 11, water: [], sand: [{ x: -14, y: 100, r: 7 }, { x: 13, y: 108, r: 6 }], trees: [{ x: 24, y: 60, r: 5 }, { x: -26, y: 45, r: 4 }], wind: [2, 1] },
+    { par: 4, L: 210, fw: 38, gr: 12, water: [{ x: 26, y: 130, r: 18 }], sand: [{ x: -12, y: 196, r: 7 }, { x: 14, y: 204, r: 6 }], trees: [{ x: -30, y: 90, r: 5 }, { x: -28, y: 110, r: 5 }, { x: 30, y: 60, r: 5 }], wind: [-3, -2] },
+    { par: 3, L: 135, fw: 30, gr: 13, water: [{ x: 0, y: 84, r: 26 }], sand: [{ x: -16, y: 128, r: 6 }], trees: [{ x: 34, y: 70, r: 5 }], wind: [4, 0] },
+    { par: 4, L: 190, fw: 30, gr: 12, water: [], sand: [{ x: -13, y: 178, r: 6 }, { x: 13, y: 176, r: 6 }, { x: 0, y: 200, r: 5 }], trees: [{ x: -24, y: 70, r: 5 }, { x: 24, y: 80, r: 5 }, { x: -22, y: 110, r: 5 }, { x: 22, y: 120, r: 5 }, { x: -24, y: 150, r: 5 }], wind: [-2, 3] },
+    { par: 5, L: 315, fw: 40, gr: 13, water: [{ x: 30, y: 285, r: 20 }], sand: [{ x: -16, y: 240, r: 8 }, { x: 18, y: 260, r: 7 }], trees: [{ x: -34, y: 120, r: 6 }, { x: 36, y: 150, r: 6 }], wind: [3, -2] },
+    { par: 3, L: 105, fw: 24, gr: 14, water: [{ x: 0, y: 105, r: 34 }], sand: [], trees: [], wind: [-4, 1] }          // an island green: the water ring is checked after the green
+  ];
+  const CLUBS = { driver: { n: 'Driver', max: 250 }, iron: { n: 'Iron', max: 150 }, wedge: { n: 'Wedge', max: 80 }, putter: { n: 'Putter', max: 45 } };
+  const ROLL = { fairway: .12, green: .18, rough: .04, sand: 0 };
+  const LIE_POWER = { rough: .75, sand: .5 };
+  function lieAt(h, x, y) {
+    if (Math.hypot(x, y - h.L) <= h.gr) return 'green';
+    if (h.water.some(w => Math.hypot(x - w.x, y - w.y) <= w.r)) return 'water';
+    if (h.sand.some(s => Math.hypot(x - s.x, y - s.y) <= s.r)) return 'sand';
+    if (Math.abs(x) <= h.fw / 2 && y >= -6 && y <= h.L + 14) return 'fairway';
+    return 'rough';
+  }
+  const outOfBounds = (h, x, y) => Math.abs(x) > 95 || y < -40 || y > h.L + 80;
+  function pickClub(h, ball, lie) {
+    if (lie === 'green') return 'putter';
+    if (lie === 'sand') return 'wedge';
+    const d = Math.hypot(ball.x, h.L - ball.y);
+    return lie === 'tee' && h.par >= 4 ? 'driver' : d > 170 ? 'driver' : d > 95 ? 'iron' : 'wedge';
+  }
+  function treeOnPath(h, a, b) {                                      // the first tree the flight path clips, between 15% and 85% of the way
+    let best = null; const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy || 1;
+    for (const tr of h.trees) {
+      const u = clamp(((tr.x - a.x) * dx + (tr.y - a.y) * dy) / len2, 0, 1), d = Math.hypot(a.x + dx * u - tr.x, a.y + dy * u - tr.y);
+      if (d < tr.r && u > .15 && u < .85 && (!best || u < best)) best = u;
+    }
+    return best;
+  }
+  /* Work out where a shot ends up. phi = direction in radians (0 = straight up the hole, + = right). rnd() is a uniform random source. */
+  function resolveShot(h, from, club, phi, dist, wind, rnd) {
+    const dir = [Math.sin(phi), Math.cos(phi)], pin = { x: 0, y: h.L };
+    if (club === 'putter') {
+      const D = dist * (1 + (rnd() - .5) * .06), rx = pin.x - from.x, ry = pin.y - from.y, along = rx * dir[0] + ry * dir[1], perp = Math.abs(rx * dir[1] - ry * dir[0]);
+      if (along > 0 && along <= D + .3 && perp <= .55 && D - along <= 3.2) return { kind: 'putt', land: pin, final: pin, outcome: 'holed', penalty: 0, roll: along };
+      const final = { x: from.x + dir[0] * D, y: from.y + dir[1] * D };
+      if (Math.hypot(final.x - pin.x, final.y - pin.y) < .6) return { kind: 'putt', land: pin, final: pin, outcome: 'holed', penalty: 0, roll: D };   // it dribbles in
+      return { kind: 'putt', land: final, final, outcome: lieAt(h, final.x, final.y) === 'water' || outOfBounds(h, final.x, final.y) ? 'water' : 'ok', penalty: 0, roll: D };
+    }
+    const carry = dist * .88, land = { x: from.x + dir[0] * carry + wind[0] * carry * .006, y: from.y + dir[1] * carry + wind[1] * carry * .006 };
+    const tu = treeOnPath(h, from, land);
+    if (tu !== null) { const f = { x: from.x + (land.x - from.x) * tu, y: from.y + (land.y - from.y) * tu }; return { kind: 'fly', land: f, final: f, outcome: 'tree', penalty: 0, roll: 0, carry: carry * tu }; }
+    if (outOfBounds(h, land.x, land.y)) return { kind: 'fly', land, final: from, outcome: 'oob', penalty: 1, roll: 0, carry };
+    const ll = lieAt(h, land.x, land.y);
+    if (ll === 'water') return { kind: 'fly', land, final: from, outcome: 'water', penalty: 1, roll: 0, carry };
+    const roll = dist * ROLL[ll], final = { x: land.x + dir[0] * roll, y: land.y + dir[1] * roll };
+    if (lieAt(h, final.x, final.y) === 'water' || outOfBounds(h, final.x, final.y)) return { kind: 'fly', land, final: from, outcome: 'water', penalty: 1, roll, carry };
+    if (Math.hypot(final.x - pin.x, final.y - pin.y) < .9) return { kind: 'fly', land, final: pin, outcome: 'holed', penalty: 0, roll, carry };
+    return { kind: 'fly', land, final, outcome: 'ok', penalty: 0, roll, carry };
+  }
+  const golfName = (n, par) => n === 1 ? 'HOLE IN ONE!' : ({ '-3': 'Albatross!', '-2': 'Eagle!', '-1': 'Birdie!', '0': 'Par', '1': 'Bogey', '2': 'Double bogey' })[String(n - par)] || (n > par ? `+${n - par}` : 'Great!');
+  const gaussish = r => (r() + r() + r() - 1.5) / 1.5;
+
+  function golfHole(t) { return HOLES[Math.min(t.s.hi, HOLES.length - 1)]; }
+  function golfWind(h) { return H.set.wind === false ? [0, 0] : h.wind; }
+  function takeShot(t, now) {
+    const s = t.s, m = s.cand, h = golfHole(t); s.cand = null; s.candT = 0; if (!m) return;
+    const club = pickClub(h, s.ball, s.lie), full = H.sv(t);
+    s.lastPk = m.pk;
+    // putts use a curve so gentle swings give short putts: ~120°/s ≈ 2 m, ~165°/s ≈ 5 m, ~210°/s ≈ 10 m, ~285°/s ≈ 20 m
+    const p = club === 'putter' ? clamp((m.pk - 60) / 390, 0, 1) : clamp((m.pk - 250) / (full - 250), 0, 1);
+    if (m.pk < (club === 'putter' ? 80 : 150) || p <= 0.01) { s.msg = 'Practice swing'; s.msgT = now; return; }
+    const dist = (club === 'putter' ? Math.pow(p, 1.6) : p) * CLUBS[club].max * (LIE_POWER[s.lie] || 1);
+    const base = Math.atan2(-s.ball.x, h.L - s.ball.y), curve = clamp(m.tw * .2 * ((H.set.twistCurve == null ? 40 : H.set.twistCurve) / 40), -14, 14);
+    const noise = gaussish(Math.random) * (1 + 2.5 * p) + (m.sat ? gaussish(Math.random) * 6 : 0);
+    const phi = base + (clamp(s.steadyAim, -35, 35) + curve + noise) * Math.PI / 180;
+    const res = resolveShot(h, s.ball, club, phi, dist, golfWind(h), Math.random);
+    s.strokes++; s.prev = { ...s.ball }; s.lastPow = Math.round(p * 100); s.lastClub = club; s.lastPowT = now;
+    const flight = res.kind === 'putt' ? 0 : 500 + (res.carry || 0) * 4.5, roll = 250 + (res.roll || 0) * (res.kind === 'putt' ? 55 : 22);
+    s.anim = { t0: now, flight, roll, from: { ...s.ball }, res };
+    s.phase = 'fly'; H.beep(res.kind === 'putt' ? 330 : 150, 90, .12, 'triangle');
+    H.log(t, `${CLUBS[club].n} · hole ${s.hi + 1} · power ${s.lastPow}%`);
+  }
+  function finishShot(t, now) {
+    const s = t.s, h = golfHole(t), res = s.anim.res; s.anim = null;
+    s.strokes += res.penalty; s.cand = null; s.candT = 0; s.zeroSet = false; s.steadyN = 0;
+    if (res.outcome === 'holed') {
+      s.ball = { x: 0, y: h.L }; s.lie = 'green'; s.phase = 'holed'; s.holedAt = now; s.msg = golfName(s.strokes, h.par); s.msgT = now;
+      s.holeStrokes.push(s.strokes); s.total += s.strokes; H.beep(880, 200, .15); H.log(t, `hole ${s.hi + 1}: ${s.strokes} (${s.msg})`);
+    } else {
+      s.ball = { ...res.final }; s.lie = lieAt(h, s.ball.x, s.ball.y);
+      s.msg = res.outcome === 'water' ? 'Splash! +1' : res.outcome === 'oob' ? 'Out of bounds! +1' : res.outcome === 'tree' ? 'Hit a tree!' : s.lie === 'green' ? 'On the green' : s.lie === 'sand' ? 'In the bunker' : s.lie === 'rough' ? 'In the rough' : 'Fairway';
+      s.msgT = now; if (res.penalty) H.beep(180, 250, .12, 'sawtooth');
+      if (s.lie === 'green' && Math.hypot(s.ball.x, h.L - s.ball.y) < 1) {                    // a "gimme": within a metre of the pin counts as holed, plus one stroke
+        s.strokes++; s.ball = { x: 0, y: h.L }; s.phase = 'holed'; s.holedAt = now; s.msg = 'Gimme! ' + golfName(s.strokes, h.par); s.msgT = now;
+        s.holeStrokes.push(s.strokes); s.total += s.strokes; H.beep(880, 200, .15); H.log(t, `hole ${s.hi + 1}: ${s.strokes} (gimme)`);
+      } else if (s.strokes >= h.par + 4) { s.holeStrokes.push(h.par + 5); s.total += h.par + 5; s.phase = 'holed'; s.holedAt = now; s.msg = 'Pick up (max strokes)'; s.msgT = now; }
+      else s.phase = 'address';
+    }
+  }
+  function nextHole(t, now) {
+    const s = t.s; s.hi++;
+    if (s.hi >= H.set.holes) { s.phase = 'done'; s.doneAt = now; return; }
+    s.ball = { x: 0, y: 0 }; s.prev = { x: 0, y: 0 }; s.lie = 'tee'; s.strokes = 0; s.phase = 'address'; s.zeroSet = false; s.steadyN = 0; s.aim = 0; s.steadyAim = 0; s.cand = null;
+  }
+  GAMES.golf = {
+    id: 'golf', emoji: '⛳', title: 'Golf', accent: '#4ade80', mode: 'timed', defDur: 300, better: 'high', arenaH: 240,
+    blurb: 'Tilt to aim, then swing your phone like a club. Fewest strokes wins.',
+    how: 'Hold the phone still — it zeroes, then tilt it left or right to aim the dotted line. Swing it like a golf club: a gentle swing is a putt, a brisk swing is a drive (the club is chosen for you). A twist of the wrist curves the ball. Avoid the water, trees and sand, and mind the wind. A ball within a metre of the pin is a "gimme". Finish the holes in the fewest strokes!',
+    settings: [
+      { k: 'holes', type: 'number', min: 1, max: 6, val: 3, label: 'Holes to play' },
+      { k: 'wind', type: 'check', label: 'Wind', val: true },
+      { k: 'twistCurve', type: 'range', min: 0, max: 100, step: 5, val: 40, label: 'Wrist-twist curve: {v}%' }
+    ],
+    sens: {
+      label: 'Swing speed for full power', unit: ' °/s', min: 700, max: 1900, step: 20, def: 1200, scale: 2000, dp: 0,
+      hint: 'Lower = easier: a gentler swing reaches full power. The bar shows the speed of your last swing.',
+      signal: t => t.s.lastPk || 0
+    },
+    reset(t) {
+      t.s = { hi: 0, strokes: 0, total: 0, holeStrokes: [], ball: { x: 0, y: 0 }, prev: { x: 0, y: 0 }, lie: 'tee', phase: 'address', anim: null, msg: '', msgT: -1e9, aim: 0, steadyAim: 0, steadyN: 0, zeroSet: false,
+              cand: null, candT: 0, holedAt: 0, doneAt: 0, lastPk: 0, lastPow: 0, lastClub: '', lastPowT: -1e9, w: 0, gs: null, g0: null, sdeg: 0 };
+    },
+    onFrame(t, f) {
+      tiltFrame(t, f); const s = t.s; s.w = f.wm || 0;
+      if (H.st !== 'running' || s.phase !== 'address') return;
+      s.steadyN = s.w < 40 ? s.steadyN + 1 : 0;
+      if (!s.zeroSet) { if (s.steadyN >= 12) { zeroTilt(t); s.zeroSet = true; s.aim = 0; s.steadyAim = 0; } return; }   // after ~0.6 s of stillness, the way you are holding it becomes "straight"
+      s.aim = ctl(s, 30).st * 35;
+      if (s.steadyN >= 3) s.steadyAim = s.aim;                        // the aim at the moment you start to swing (frozen while the phone is moving)
+    },
+    onSwing(t, m, now) {
+      const s = t.s; if (H.st !== 'running' || s.phase !== 'address') return;
+      if (!s.cand || m.pk > s.cand.pk) s.cand = m;                    // a backswing then a downswing arrive as two swings: keep the stronger one
+      if (!s.candT) s.candT = now;
+    },
+    tick(now) {
+      if (H.st !== 'running') return;
+      H.teams.forEach(t => {
+        const s = t.s;
+        if (s.phase === 'address' && s.cand && now - s.candT >= 450) takeShot(t, now);
+        else if (s.phase === 'fly' && s.anim && now >= s.anim.t0 + s.anim.flight + s.anim.roll) finishShot(t, now);
+        else if (s.phase === 'holed' && now - s.holedAt >= 1900) nextHole(t, now);
+      });
+      if (H.teams.length && H.teams.every(t => t.s.phase === 'done')) H.finish(false);
+    },
+    rankKey: t => (t.s.holeStrokes.length) * 1000 - t.s.total,
+    score: t => t.s.holeStrokes.length * 1000 - t.s.total,
+    scoreText: t => `${t.s.total + (t.s.phase === 'done' ? 0 : t.s.strokes)} strokes`,
+    sub: t => { const s = t.s, h = golfHole(t), rel = s.holeStrokes.reduce((a, x, i) => a + x - HOLES[i].par, 0); return s.phase === 'done' ? `Finished! ${rel > 0 ? '+' : ''}${rel} vs par` : `Hole ${s.hi + 1}/${H.set.holes} · par ${h.par} · ${rel > 0 ? '+' : ''}${rel} so far`; },
+    phone: (t, now) => {
+      const s = t.s, h = golfHole(t), d = Math.hypot(s.ball.x, h.L - s.ball.y);
+      if (s.phase === 'done') return { big: '🏁', sub: `${s.total} strokes`, bg: '#14301f' };
+      if (s.phase === 'holed') return { big: s.msg, sub: `Hole ${s.hi + 1} done`, bg: '#14301f' };
+      if (s.phase === 'fly') return { big: '…', sub: `${CLUBS[s.lastClub].n} · power ${s.lastPow}%` };
+      return { big: `${Math.round(d)} m`, sub: `Hole ${s.hi + 1} · ${CLUBS[pickClub(h, s.ball, s.lie)].n} · tilt to aim, then swing!`, meter: clamp(s.w / 1500, 0, 1) };
+    },
+    ...zeroBtn,
+    draw(t, c, w, h, now, dt) {
+      const s = t.s, hole = golfHole(t), L = hole.L;
+      if (s.phase === 'done') { bg(c, w, h, '#16502a', '#0f3a1e'); txt(c, '🏁 FINISHED', w / 2, h / 2 - 6, 24, '#ffd166', 'center', 800); txt(c, `${s.total} strokes`, w / 2, h / 2 + 24, 18, '#fff'); txt(c, s.holeStrokes.map((x, i) => x - HOLES[i].par).map(x => x > 0 ? '+' + x : x).join('  '), w / 2, h / 2 + 48, 13, '#cfe8d4'); return; }
+      const halfW = Math.max(hole.fw / 2 + 22, hole.gr + 14, ...hole.water.map(q => Math.abs(q.x) + q.r + 4), ...hole.sand.map(q => Math.abs(q.x) + q.r + 4), ...hole.trees.map(q => Math.abs(q.x) + q.r + 4));
+      const top = Math.max(L + 18, ...hole.water.map(q => q.y + q.r + 4)), sc = Math.min((w - 12) / (halfW * 2), (h - 46) / (top + 14));
+      const X = x => w / 2 + x * sc, Y = y => h - 24 - (y + 8) * sc;
+      bg(c, w, h, '#1f6a34', '#17552a');                                       // the rough
+      c.fillStyle = '#2f8a45'; rr(c, X(-hole.fw / 2), Y(L + 14), hole.fw * sc, (L + 20) * sc, hole.fw * sc * .3); c.fill();   // the fairway
+      c.fillStyle = '#6a5a3a'; c.fillRect(X(-3), Y(0) - 2, 6 * sc, 6 * sc);    // tee box
+      hole.sand.forEach(q => { c.fillStyle = '#e8d49a'; c.beginPath(); c.arc(X(q.x), Y(q.y), q.r * sc, 0, TAU); c.fill(); });
+      hole.water.forEach(q => { c.fillStyle = '#2f7fd0'; c.beginPath(); c.arc(X(q.x), Y(q.y), q.r * sc, 0, TAU); c.fill(); c.strokeStyle = 'rgba(255,255,255,.25)'; c.lineWidth = 1; c.beginPath(); c.arc(X(q.x), Y(q.y), q.r * sc * .6, 0, TAU); c.stroke(); });
+      c.fillStyle = '#58c26a'; c.beginPath(); c.arc(X(0), Y(L), hole.gr * sc, 0, TAU); c.fill();   // the green drawn over the water ring
+      c.fillStyle = '#0a0a0a'; c.beginPath(); c.arc(X(0), Y(L), Math.max(2.5, .55 * sc), 0, TAU); c.fill();
+      c.strokeStyle = '#fff'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(X(0), Y(L)); c.lineTo(X(0), Y(L) - 22); c.stroke(); c.fillStyle = '#ff4d4d'; c.beginPath(); c.moveTo(X(0), Y(L) - 22); c.lineTo(X(0) + 12, Y(L) - 18); c.lineTo(X(0), Y(L) - 13); c.fill();
+      hole.trees.forEach(q => { c.fillStyle = '#0f3a1e'; c.beginPath(); c.arc(X(q.x) + 1.5, Y(q.y) + 1.5, q.r * sc, 0, TAU); c.fill(); c.fillStyle = '#1f7a38'; c.beginPath(); c.arc(X(q.x), Y(q.y), q.r * sc, 0, TAU); c.fill(); c.fillStyle = '#3aa655'; c.beginPath(); c.arc(X(q.x) - q.r * sc * .25, Y(q.y) - q.r * sc * .25, q.r * sc * .5, 0, TAU); c.fill(); });
+      // the ball (flying, rolling or resting)
+      let bx = s.ball.x, by = s.ball.y, lift = 0, a = s.anim;
+      if (s.phase === 'fly' && a) {
+        const u = now - a.t0, r = a.res;
+        if (a.flight > 0 && u < a.flight) { const k = u / a.flight; bx = a.from.x + (r.land.x - a.from.x) * k; by = a.from.y + (r.land.y - a.from.y) * k; lift = Math.sin(Math.PI * k) * Math.min(40, 6 + (r.carry || 0) * .22); }
+        else { const k = a.roll > 0 ? clamp((u - a.flight) / a.roll, 0, 1) : 1, e = 1 - (1 - k) * (1 - k), src = a.flight > 0 ? r.land : a.from, dst = r.outcome === 'water' || r.outcome === 'oob' ? r.land : r.final; bx = src.x + (dst.x - src.x) * e; by = src.y + (dst.y - src.y) * e; }
+      }
+      const px = X(bx), py = Y(by);
+      if (lift) { c.fillStyle = 'rgba(0,0,0,.3)'; c.beginPath(); c.ellipse(px, py + 1, 3, 1.6, 0, 0, TAU); c.fill(); }
+      c.fillStyle = '#fff'; c.beginPath(); c.arc(px, py - lift, Math.max(3, 1.3 * sc), 0, TAU); c.fill(); c.strokeStyle = 'rgba(0,0,0,.4)'; c.lineWidth = 1; c.stroke();
+      // the aim line
+      if (s.phase === 'address') {
+        const base = Math.atan2(-s.ball.x, L - s.ball.y), phi = base + clamp(s.zeroSet ? s.aim : 0, -35, 35) * Math.PI / 180, d = Math.min(Math.hypot(s.ball.x, L - s.ball.y), 120), club = pickClub(hole, s.ball, s.lie);
+        c.strokeStyle = s.zeroSet ? '#ffd166' : 'rgba(255,255,255,.5)'; c.lineWidth = 2; c.setLineDash([5, 5]); c.beginPath(); c.moveTo(px, py); c.lineTo(px + Math.sin(phi) * d * sc, py - Math.cos(phi) * d * sc); c.stroke(); c.setLineDash([]);
+        txt(c, s.zeroSet ? `${CLUBS[club].n} · ${Math.round(Math.hypot(s.ball.x, L - s.ball.y))} m to pin` : 'hold still to set your aim…', w / 2, h - 6, 12, '#fff');
+      }
+      // wind + info
+      const wd = golfWind(hole), ws = Math.hypot(wd[0], wd[1]);
+      if (ws > 0) { c.save(); c.translate(24, 36); c.rotate(Math.atan2(wd[0], -wd[1])); c.strokeStyle = '#cfe8ff'; c.fillStyle = '#cfe8ff'; c.lineWidth = 2; c.beginPath(); c.moveTo(0, 10); c.lineTo(0, -10); c.stroke(); c.beginPath(); c.moveTo(0, -14); c.lineTo(5, -6); c.lineTo(-5, -6); c.fill(); c.restore(); txt(c, `wind ${ws.toFixed(0)}`, 24, 58, 10, '#cfe8ff'); }
+      txt(c, `Hole ${s.hi + 1}/${H.set.holes}  ·  Par ${hole.par}`, 8, 14, 12, '#fff', 'left', 800); txt(c, `Stroke ${s.strokes + (s.phase === 'address' ? 1 : 0)}`, w - 8, 14, 12, '#ffd166', 'right', 800);
+      if (now - s.lastPowT < 1800 && s.lastPow) txt(c, `power ${s.lastPow}%`, w - 8, 30, 11, '#fff', 'right');
+      if (now - s.msgT < 1800 && s.msg) { c.globalAlpha = clamp(1 - (now - s.msgT - 1000) / 800, 0, 1); txt(c, s.msg, w / 2, 50, s.phase === 'holed' ? 22 : 17, s.phase === 'holed' ? '#ffd166' : '#fff', 'center', 800); c.globalAlpha = 1; }
+      if (H.st === 'idle') { c.fillStyle = 'rgba(0,0,0,.35)'; c.fillRect(0, h / 2 - 20, w, 34); txt(c, 'Ready — press Start', w / 2, h / 2 + 3, 16, '#fff'); }
+    }
+  };
+  GAMES.golf.debug = () => ({ HOLES, CLUBS, lieAt, resolveShot, pickClub, outOfBounds, treeOnPath });
   GAMES.flap.debug = () => FL; GAMES.simon.debug = () => SIM; GAMES.pose.debug = () => ({ PM, POSES, poseOf });
 
   window.GAMES = GAMES;
