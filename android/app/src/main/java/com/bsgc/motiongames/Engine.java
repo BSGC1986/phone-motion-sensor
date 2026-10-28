@@ -39,13 +39,13 @@ class Engine {
 
     // swing detection
     private static class Swing {
-        double t0, pk, tPk, acc, ang, tw, twPk, quiet;
+        double t0, pk, tPk, acc, ang, tw, twPk, quiet, thr, kmin;
         double[] ax = new double[3], g0, g1;
-        boolean sat;
+        boolean sat, addr, soft;
         java.util.ArrayList<Double> tr = new java.util.ArrayList<>();
     }
     private Swing swg;
-    private double swEnd = -1e9, wmax;
+    private double swEnd = -1e9, wmax, restMs, restAt;
 
     Engine(Out out) { this.out = out; }
 
@@ -114,11 +114,19 @@ class Engine {
     private void swing(double now, double dt) {
         double w = Math.sqrt(ra * ra + rb * rb + rg * rg), acc = Math.sqrt(lx * lx + ly * ly + lz * lz), start = sw;
         if (w > wmax) wmax = w;
+        // "address": the phone has been still for a moment (hand-held stillness is well under 30°/s; walking never gets there)
+        if (swg == null) {                                                    // a 350 ms ramp-up out of stillness is allowed before the timer resets
+            if (w < 30) { restMs += dt * 1000; restAt = now; } else if (now - restAt > 350) restMs = 0;
+        }
         Swing S = swg;
         if (S == null) {
-            if (w <= start || now - swEnd < 250) return;
+            if (now - swEnd < 40) return;                                         // (a backswing straight into a downswing must not lose the downswing)
+            double softThr = Math.max(40, start * 0.28);
+            boolean strong = w > start, soft = start <= 300 && w > softThr && restMs >= 250;   // gentle swings count only from address, and only while the slider is in its sensitive range
+            if (!strong && !soft) return;
             S = swg = new Swing();
             S.t0 = now; S.pk = w; S.tPk = now; S.acc = acc; S.g0 = gravUnit();
+            S.addr = restMs >= 250; S.thr = strong ? start : softThr; S.kmin = strong ? 1.4 : 1.6; S.soft = !strong;
         }
         S.ang += w * dt;
         S.ax[0] += rb * dt; S.ax[1] += rg * dt; S.ax[2] += ra * dt;
@@ -127,11 +135,12 @@ class Engine {
         if (w >= 1950) S.sat = true;
         if (w > S.pk) { S.pk = w; S.tPk = now; S.twPk = S.tw; S.g1 = gravUnit(); }
         if (S.tr.size() < 200) S.tr.add(w);
-        S.quiet = w < start * 0.5 ? S.quiet + dt * 1000 : 0;
+        S.quiet = w < S.thr * 0.5 ? S.quiet + dt * 1000 : 0;
         if (S.quiet < 50 && now - S.t0 < 1600) return;
-        swg = null; swEnd = now;
+        swg = null; swEnd = now; restMs = 0;
         double dur = now - S.t0;
-        if (S.pk < start * 1.4 || dur < 70) return;
+        if (S.pk < S.thr * S.kmin || dur < 70 || S.ang < 15) return;
+        if (S.soft && S.pk < start * 1.4 && dur > 900) return;                // sustained gentle motion (setting off walking, waving) is not a stroke
         double am = Math.sqrt(S.ax[0] * S.ax[0] + S.ax[1] * S.ax[1] + S.ax[2] * S.ax[2]); if (am == 0) am = 1;
         try {
             JSONObject m = new JSONObject();
@@ -141,7 +150,7 @@ class Engine {
             double[] g1 = S.g1 == null ? S.g0 : S.g1;
             m.put("g0", new org.json.JSONArray().put(round(S.g0[0], 2)).put(round(S.g0[1], 2)).put(round(S.g0[2], 2)));
             m.put("g1", new org.json.JSONArray().put(round(g1[0], 2)).put(round(g1[1], 2)).put(round(g1[2], 2)));
-            m.put("sat", S.sat);
+            m.put("sat", S.sat); m.put("addr", S.addr);
             int n = 16, len = S.tr.size();
             org.json.JSONArray tr = new org.json.JSONArray();
             for (int i = 0; i < n; i++) {

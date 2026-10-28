@@ -1112,12 +1112,12 @@
   /* ======================================================================
      15. SWING LAB — practise swinging the phone and see exactly what it measures
      ====================================================================== */
-  const swPower = pk => clamp(Math.round((pk - 300) / 12), 0, 100);        // 300°/s = 0 … 1500°/s = 100
+  const swPower = pk => clamp(Math.round((pk - 100) / 14), 0, 100);        // 100°/s = 0 … 1500°/s = 100 (measured on a Galaxy S22: gentle ≈150–270, medium ≈750–950, brisk ≈1000–1200)
   const swPlane = ax => { const a = ax.map(Math.abs), m = Math.max(...a); return m === a[0] ? 'tipping (like a hammer)' : m === a[1] ? 'twisting (like a screwdriver)' : 'turning (like a steering wheel)'; };
   GAMES.swinglab = {
     id: 'swinglab', emoji: '🏌️', title: 'Swing Lab', accent: '#22d3ee', mode: 'free', small: true, arenaH: 190,
     blurb: 'Practise swinging the phone: see the speed, power, twist and shape of every swing.',
-    how: 'Hold the phone firmly (wrist strap on!) and swing it like a golf club, a bat or a bowling arm. Each swing is measured on the phone and shown here: how fast it spun, how long it took, how far it turned, how hard it accelerated and how it twisted. This is where we find out what feels right before building the swing games.',
+    how: 'Hold the phone firmly (wrist strap on!) and swing it like a golf club, a bat or a bowling arm. Each swing is measured on the phone and shown here: how fast it spun, how long it took, how far it turned, how hard it accelerated and how it twisted. Strong swings count from any position; gentle ones (like a putt) count when you start from a still "address" position, so walking about does not set them off.',
     settings: [],
     sens: {
       label: 'Swing starts above', unit: ' °/s', min: 100, max: 800, step: 10, def: 250, scale: 2000, dp: 0,
@@ -1137,9 +1137,9 @@
     sub: t => t.s.last ? `Power ${swPower(t.s.last.pk)} · ${t.s.last.dur} ms · ${swPlane(t.s.last.ax)}` : 'Swing the phone!',
     phone: (t, now) => ({ big: t.s.last ? swPower(t.s.last.pk) : '–', sub: t.s.last ? `Power · ${t.s.last.pk}°/s peak` : 'Swing me! (strap on)', meter: clamp(t.s.w / 1500, 0, 1), bg: now - t.s.flash < 250 ? '#10294d' : null }),
     extra: () => `<div class="sdata"><div class="sh">Last swing</div>${cell('pk', 'Peak °/s')}${cell('pw', 'Power')}${cell('du', 'Time ms')}
-      ${cell('an', 'Turned °')}${cell('ac', 'Accel m/s²')}${cell('tw', 'Twist °')}<div class="sh">Session</div>${cell('n', 'Swings')}${cell('bs', 'Best °/s')}${cell('sa', 'Clipped?')}</div>`,
+      ${cell('an', 'Turned °')}${cell('ac', 'Accel m/s²')}${cell('tw', 'Twist °')}${cell('ad', 'Started')}<div class="sh">Session</div>${cell('n', 'Swings')}${cell('bs', 'Best °/s')}${cell('sa', 'Clipped?')}</div>`,
     cardUpdate(t, el) {
-      const s = t.s, m = s.last, v = { pk: m ? m.pk : '–', pw: m ? swPower(m.pk) : '–', du: m ? m.dur : '–', an: m ? m.ang : '–', ac: m ? m.acc : '–', tw: m ? m.tw : '–', n: s.n, bs: s.best || '–', sa: m ? (m.sat ? 'yes!' : 'no') : '–' };
+      const s = t.s, m = s.last, v = { pk: m ? m.pk : '–', pw: m ? swPower(m.pk) : '–', du: m ? m.dur : '–', an: m ? m.ang : '–', ac: m ? m.acc : '–', tw: m ? m.tw : '–', ad: m ? (m.addr ? 'from rest' : 'moving') : '–', n: s.n, bs: s.best || '–', sa: m ? (m.sat ? 'yes!' : 'no') : '–' };
       el.querySelectorAll('[data-k]').forEach(e => { e.textContent = v[e.dataset.k]; });
     },
     draw(t, c, w, h, now, dt) {

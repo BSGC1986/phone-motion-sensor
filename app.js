@@ -100,11 +100,18 @@
     swing(now, dt) {
       const c = this.cfg, r = this.rr, w = Math.hypot(r[0], r[1], r[2]), acc = Math.hypot(this.lx, this.ly, this.lz);
       if (w > this.wmax) this.wmax = w;
+      // "address": the phone has been still for a moment (hand-held stillness is well under 30°/s; walking never gets there)
+      if (!this.swg) {                                                         // a 350 ms ramp-up out of stillness is allowed before the timer resets
+        if (w < 30) { this.rest = (this.rest || 0) + dt * 1000; this.restAt = now; } else if (now - (this.restAt || 0) > 350) this.rest = 0;
+      }
       let S = this.swg;
       if (!S) {
-        if (w <= c.sw || now - this.swEnd < 250) return;
+        if (now - this.swEnd < 40) return;                                     // (a backswing straight into a downswing must not lose the downswing)
+        const strong = w > c.sw, soft = c.sw <= 300 && w > Math.max(40, c.sw * .28) && this.rest >= 250;   // gentle swings count only from address, and only while the slider is in its sensitive range
+        if (!strong && !soft) return;
         const gv = this.gv || { x: 0, y: 0, z: G }, m = Math.hypot(gv.x, gv.y, gv.z) || 1;
-        S = this.swg = { t0: now, pk: w, tPk: now, acc, ang: 0, ax: [0, 0, 0], tw: 0, twPk: 0, quiet: 0, sat: false, tr: [], g0: [gv.x / m, gv.y / m, gv.z / m], g1: null };
+        S = this.swg = { t0: now, pk: w, tPk: now, acc, ang: 0, ax: [0, 0, 0], tw: 0, twPk: 0, quiet: 0, sat: false, tr: [], g0: [gv.x / m, gv.y / m, gv.z / m], g1: null,
+                         addr: this.rest >= 250, thr: strong ? c.sw : Math.max(40, c.sw * .28), kmin: strong ? 1.4 : 1.6, soft: !strong };
       }
       S.ang += w * dt;
       S.ax[0] += r[1] * dt; S.ax[1] += r[2] * dt; S.ax[2] += r[0] * dt;      // turning about the phone's x (tip), y (long axis / twist) and z (steering wheel) axes
@@ -113,16 +120,17 @@
       if (w >= 1950) S.sat = true;                                            // gyros top out around 2000°/s — the real peak may be higher
       if (w > S.pk) { S.pk = w; S.tPk = now; S.twPk = S.tw; const gv = this.gv || { x: 0, y: 0, z: G }, m = Math.hypot(gv.x, gv.y, gv.z) || 1; S.g1 = [gv.x / m, gv.y / m, gv.z / m]; }
       if (S.tr.length < 200) S.tr.push(w);
-      S.quiet = w < c.sw * .5 ? S.quiet + dt * 1000 : 0;
+      S.quiet = w < S.thr * .5 ? S.quiet + dt * 1000 : 0;
       if (S.quiet < 50 && now - S.t0 < 1600) return;
-      this.swg = null; this.swEnd = now;
+      this.swg = null; this.swEnd = now; this.rest = 0;
       const dur = now - S.t0;
-      if (S.pk < c.sw * 1.4 || dur < 70) return;                              // too small or too brief to be a swing
+      if (S.pk < S.thr * S.kmin || dur < 70 || S.ang < 15) return;           // too small or too brief to be a swing
+      if (S.soft && S.pk < c.sw * 1.4 && dur > 900) return;                  // sustained gentle motion (setting off walking, waving) is not a stroke
       const am = Math.hypot(S.ax[0], S.ax[1], S.ax[2]) || 1, n = 16, tr = [];
       for (let i = 0; i < n; i++) { let m = 0; for (let k = Math.floor(i * S.tr.length / n); k < Math.max(Math.floor((i + 1) * S.tr.length / n), Math.floor(i * S.tr.length / n) + 1) && k < S.tr.length; k++) m = Math.max(m, S.tr[k]); tr.push(Math.round(m / 10)); }
       const q = v => +v.toFixed(2);
       this.send({ t: 'swing', pk: Math.round(S.pk), at: Math.round(S.tPk), dur: Math.round(dur), tpk: Math.round(S.tPk - S.t0), ang: Math.round(S.ang), acc: +S.acc.toFixed(1),
-                  tw: Math.round(S.twPk), ax: S.ax.map(v => q(v / am)), g0: S.g0.map(q), g1: (S.g1 || S.g0).map(q), sat: S.sat, tr });
+                  tw: Math.round(S.twPk), ax: S.ax.map(v => q(v / am)), g0: S.g0.map(q), g1: (S.g1 || S.g0).map(q), sat: S.sat, addr: S.addr, tr });
     }
     commit() { const p = this.pend; this.pend = null; this.send({ t: 'hit', g: +p.peak.toFixed(2) }); }
     tick() {

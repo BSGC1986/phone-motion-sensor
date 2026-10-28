@@ -86,7 +86,7 @@ public class SensorService extends Service implements SensorEventListener {
         thread.start();
         Handler h = new Handler(thread.getLooper());
         sm = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
-        int us = 16000;                                               // ~60 Hz
+        int us = 5000;                                                // ~200 Hz: sharper swing peaks and hit timing (frames to the PC stay at 20 Hz)
         reg(Sensor.TYPE_ACCELEROMETER, us, h);
         reg(Sensor.TYPE_GYROSCOPE, us, h);
         linearOk = reg(Sensor.TYPE_LINEAR_ACCELERATION, us, h);
