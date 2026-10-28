@@ -1109,6 +1109,64 @@
       if (PM.phase === 'intro') { c.fillStyle = 'rgba(0,0,0,.4)'; c.fillRect(0, 0, w, h); txt(c, 'GET READY', w / 2, h / 2 + 8, 28, '#fff', 'center', 800); }
     }
   };
+  /* ======================================================================
+     15. SWING LAB — practise swinging the phone and see exactly what it measures
+     ====================================================================== */
+  const swPower = pk => clamp(Math.round((pk - 300) / 12), 0, 100);        // 300°/s = 0 … 1500°/s = 100
+  const swPlane = ax => { const a = ax.map(Math.abs), m = Math.max(...a); return m === a[0] ? 'tipping (like a hammer)' : m === a[1] ? 'twisting (like a screwdriver)' : 'turning (like a steering wheel)'; };
+  GAMES.swinglab = {
+    id: 'swinglab', emoji: '🏌️', title: 'Swing Lab', accent: '#22d3ee', mode: 'free', small: true, arenaH: 190,
+    blurb: 'Practise swinging the phone: see the speed, power, twist and shape of every swing.',
+    how: 'Hold the phone firmly (wrist strap on!) and swing it like a golf club, a bat or a bowling arm. Each swing is measured on the phone and shown here: how fast it spun, how long it took, how far it turned, how hard it accelerated and how it twisted. This is where we find out what feels right before building the swing games.',
+    settings: [],
+    sens: {
+      label: 'Swing starts above', unit: ' °/s', min: 100, max: 800, step: 10, def: 250, scale: 2000, dp: 0,
+      hint: 'Lower = more sensitive: slower arm movements count as swings. The bar shows how fast the phone is turning right now.',
+      signal: t => t.s.w, apply: t => { t.sw = H.sv(t); }
+    },
+    reset(t) { t.s = { w: 0, wp: 0, wpT: 0, last: null, hist: [], n: 0, best: 0, flash: -1e9 }; },
+    onFrame(t, f, d, dt, now) {
+      const s = t.s, w = f.wm || 0; s.w += (w - s.w) * .5;
+      if (w >= s.wp || now - s.wpT > 1400) { s.wp = w; s.wpT = now; }
+    },
+    onSwing(t, m, now) {
+      const s = t.s; s.last = m; s.hist.unshift(m); if (s.hist.length > 8) s.hist.pop(); s.n++; s.best = Math.max(s.best, m.pk); s.flash = now;
+      H.log(t, `swing ${m.pk}°/s · power ${swPower(m.pk)}${m.sat ? ' (clipped!)' : ''}`);
+    },
+    score: () => 0, scoreText: t => t.s.last ? `${t.s.last.pk} °/s` : '–',
+    sub: t => t.s.last ? `Power ${swPower(t.s.last.pk)} · ${t.s.last.dur} ms · ${swPlane(t.s.last.ax)}` : 'Swing the phone!',
+    phone: (t, now) => ({ big: t.s.last ? swPower(t.s.last.pk) : '–', sub: t.s.last ? `Power · ${t.s.last.pk}°/s peak` : 'Swing me! (strap on)', meter: clamp(t.s.w / 1500, 0, 1), bg: now - t.s.flash < 250 ? '#10294d' : null }),
+    extra: () => `<div class="sdata"><div class="sh">Last swing</div>${cell('pk', 'Peak °/s')}${cell('pw', 'Power')}${cell('du', 'Time ms')}
+      ${cell('an', 'Turned °')}${cell('ac', 'Accel m/s²')}${cell('tw', 'Twist °')}<div class="sh">Session</div>${cell('n', 'Swings')}${cell('bs', 'Best °/s')}${cell('sa', 'Clipped?')}</div>`,
+    cardUpdate(t, el) {
+      const s = t.s, m = s.last, v = { pk: m ? m.pk : '–', pw: m ? swPower(m.pk) : '–', du: m ? m.dur : '–', an: m ? m.ang : '–', ac: m ? m.acc : '–', tw: m ? m.tw : '–', n: s.n, bs: s.best || '–', sa: m ? (m.sat ? 'yes!' : 'no') : '–' };
+      el.querySelectorAll('[data-k]').forEach(e => { e.textContent = v[e.dataset.k]; });
+    },
+    draw(t, c, w, h, now, dt) {
+      const s = t.s, m = s.last;
+      bg(c, w, h, '#0c2530', '#08151c');
+      // live speed gauge
+      const gx = Math.min(w * .24, 80), gy = 100, R = 52, a0 = Math.PI * .75, sweep = Math.PI * 1.5, f = clamp(s.w / 2000, 0, 1), fp = clamp(s.wp / 2000, 0, 1);
+      c.lineWidth = 10; c.lineCap = 'round'; c.strokeStyle = '#17394a'; c.beginPath(); c.arc(gx, gy, R, a0, a0 + sweep); c.stroke();
+      if (f > .005) { c.strokeStyle = `hsl(${190 - f * 190},85%,58%)`; c.beginPath(); c.arc(gx, gy, R, a0, a0 + sweep * f); c.stroke(); }
+      const pa = a0 + sweep * fp; c.strokeStyle = '#fff'; c.lineWidth = 3; c.beginPath(); c.moveTo(gx + Math.cos(pa) * (R - 9), gy + Math.sin(pa) * (R - 9)); c.lineTo(gx + Math.cos(pa) * (R + 9), gy + Math.sin(pa) * (R + 9)); c.stroke();
+      txt(c, String(Math.round(s.w)), gx, gy + 6, 24, '#fff', 'center', 800); txt(c, '°/s now', gx, gy + 24, 11, '#7fb3c7'); txt(c, '2000 = sensor limit', gx, gy + 66, 9, '#4f7c8e');
+      // shape of the last swing: speed over time
+      const x0 = gx + R + 28, x1 = w - 14, y0 = 30, y1 = 112;
+      txt(c, 'LAST SWING — speed over time', x0, 18, 11, '#7fb3c7', 'left', 800);
+      c.strokeStyle = '#17394a'; c.lineWidth = 1; c.strokeRect(x0, y0, x1 - x0, y1 - y0);
+      if (m) {
+        const n = m.tr.length, bw = (x1 - x0) / n, pk = Math.max(...m.tr, 1);
+        m.tr.forEach((v, i) => { const hh = (v * 10 / 2000) * (y1 - y0 - 6); c.fillStyle = v === pk ? '#ffd166' : '#22d3ee'; c.fillRect(x0 + i * bw + 1, y1 - hh, bw - 2, hh); });
+        txt(c, `peak ${m.pk}°/s · power ${swPower(m.pk)}`, x0 + 4, y0 + 13, 12, '#fff', 'left', 800);
+        if (m.sat) txt(c, 'maybe clipped!', x1 - 4, y0 + 13, 11, '#ff6b6b', 'right', 800);
+      } else txt(c, 'swing the phone…', (x0 + x1) / 2, (y0 + y1) / 2 + 4, 13, '#4f7c8e');
+      // recent swings
+      txt(c, 'RECENT', x0, 134, 10, '#7fb3c7', 'left', 800);
+      s.hist.forEach((q, i) => { const bw = Math.min(26, (x1 - x0) / 8 - 3), hh = clamp(q.pk / 2000, .04, 1) * 38; c.fillStyle = q.sat ? '#ff6b6b' : i === 0 ? '#ffd166' : '#2a8faa'; c.fillRect(x0 + i * (bw + 3), 184 - hh, bw, hh); });
+      if (now - s.flash < 250) { c.strokeStyle = 'rgba(255,255,255,.5)'; c.lineWidth = 3; c.strokeRect(1, 1, w - 2, h - 2); }
+    }
+  };
   GAMES.flap.debug = () => FL; GAMES.simon.debug = () => SIM; GAMES.pose.debug = () => ({ PM, POSES, poseOf });
 
   window.GAMES = GAMES;

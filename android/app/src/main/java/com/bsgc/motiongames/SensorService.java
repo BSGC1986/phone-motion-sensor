@@ -127,6 +127,7 @@ public class SensorService extends Service implements SensorEventListener {
                     engine.thr = c.optDouble("thr", engine.thr);
                     engine.gapMs = c.optDouble("gap", engine.gapMs);
                     engine.airThr = c.optDouble("air", engine.airThr);
+                    engine.sw = c.optDouble("sw", engine.sw);
                 }
                 break;
             }

@@ -18,7 +18,7 @@ class Engine {
     private final Out out;
 
     // settings the host can change (written from the network thread, read on the sensor thread)
-    volatile double thr = 2.5, gapMs = 200, airThr = 0.5;
+    volatile double thr = 2.5, gapMs = 200, airThr = 0.5, sw = 250;
     volatile boolean hasLinear = false;
 
     // running totals and latest readings
@@ -36,6 +36,16 @@ class Engine {
     // weightless detection
     private double airStart;
     private int airN;
+
+    // swing detection
+    private static class Swing {
+        double t0, pk, tPk, acc, ang, tw, twPk, quiet;
+        double[] ax = new double[3], g0, g1;
+        boolean sat;
+        java.util.ArrayList<Double> tr = new java.util.ArrayList<>();
+    }
+    private Swing swg;
+    private double swEnd = -1e9, wmax;
 
     Engine(Out out) { this.out = out; }
 
@@ -87,6 +97,61 @@ class Engine {
         // Android: x, y, z in rad/s.  Web: alpha = about z, beta = about x, gamma = about y, in deg/s.
         ra = v[2] * DEG; rb = v[0] * DEG; rg = v[1] * DEG;
         rot += Math.sqrt(ra * ra + rb * rb + rg * rg) * dt;
+        swing(now, dt);
+    }
+
+    private double[] gravUnit() {
+        double[] g = grav == null ? new double[]{0, 0, G} : grav;
+        double m = Math.sqrt(g[0] * g[0] + g[1] * g[1] + g[2] * g[2]); if (m == 0) m = 1;
+        return new double[]{g[0] / m, g[1] / m, g[2] / m};
+    }
+
+    /**
+     * A swing = the phone spinning faster than `sw` degrees/second, then settling again. One summary message per swing
+     * (same fields as the web page): peak speed, when it peaked, duration, total turn, peak acceleration, twist,
+     * axis of rotation, gravity at start and at the peak, and a 16-point speed curve.
+     */
+    private void swing(double now, double dt) {
+        double w = Math.sqrt(ra * ra + rb * rb + rg * rg), acc = Math.sqrt(lx * lx + ly * ly + lz * lz), start = sw;
+        if (w > wmax) wmax = w;
+        Swing S = swg;
+        if (S == null) {
+            if (w <= start || now - swEnd < 250) return;
+            S = swg = new Swing();
+            S.t0 = now; S.pk = w; S.tPk = now; S.acc = acc; S.g0 = gravUnit();
+        }
+        S.ang += w * dt;
+        S.ax[0] += rb * dt; S.ax[1] += rg * dt; S.ax[2] += ra * dt;
+        S.tw += rg * dt;
+        if (acc > S.acc) S.acc = acc;
+        if (w >= 1950) S.sat = true;
+        if (w > S.pk) { S.pk = w; S.tPk = now; S.twPk = S.tw; S.g1 = gravUnit(); }
+        if (S.tr.size() < 200) S.tr.add(w);
+        S.quiet = w < start * 0.5 ? S.quiet + dt * 1000 : 0;
+        if (S.quiet < 50 && now - S.t0 < 1600) return;
+        swg = null; swEnd = now;
+        double dur = now - S.t0;
+        if (S.pk < start * 1.4 || dur < 70) return;
+        double am = Math.sqrt(S.ax[0] * S.ax[0] + S.ax[1] * S.ax[1] + S.ax[2] * S.ax[2]); if (am == 0) am = 1;
+        try {
+            JSONObject m = new JSONObject();
+            m.put("t", "swing"); m.put("pk", Math.round(S.pk)); m.put("at", Math.round(S.tPk)); m.put("dur", Math.round(dur));
+            m.put("tpk", Math.round(S.tPk - S.t0)); m.put("ang", Math.round(S.ang)); m.put("acc", round(S.acc, 1)); m.put("tw", Math.round(S.twPk));
+            m.put("ax", new org.json.JSONArray().put(round(S.ax[0] / am, 2)).put(round(S.ax[1] / am, 2)).put(round(S.ax[2] / am, 2)));
+            double[] g1 = S.g1 == null ? S.g0 : S.g1;
+            m.put("g0", new org.json.JSONArray().put(round(S.g0[0], 2)).put(round(S.g0[1], 2)).put(round(S.g0[2], 2)));
+            m.put("g1", new org.json.JSONArray().put(round(g1[0], 2)).put(round(g1[1], 2)).put(round(g1[2], 2)));
+            m.put("sat", S.sat);
+            int n = 16, len = S.tr.size();
+            org.json.JSONArray tr = new org.json.JSONArray();
+            for (int i = 0; i < n; i++) {
+                int lo = i * len / n, hi = Math.max((i + 1) * len / n, lo + 1); double mx = 0;
+                for (int k = lo; k < hi && k < len; k++) mx = Math.max(mx, S.tr.get(k));
+                tr.put(Math.round(mx / 10));
+            }
+            m.put("tr", tr);
+            out.send(m);
+        } catch (JSONException ignored) { }
     }
 
     void onLinear(float[] v) { lx = v[0]; ly = v[1]; lz = v[2]; }
@@ -123,8 +188,9 @@ class Engine {
             f.put("ax", round(ax, 2)); f.put("ay", round(ay, 2)); f.put("az", round(az, 2));
             f.put("lx", round(lx, 2)); f.put("ly", round(ly, 2)); f.put("lz", round(lz, 2));
             f.put("ra", Math.round(ra)); f.put("rb", Math.round(rb)); f.put("rg", Math.round(rg));
+            f.put("wm", Math.round(wmax));
         } catch (JSONException ignored) { }
-        lastFrameT = now; gmax = g; gmin = g;
+        lastFrameT = now; gmax = g; gmin = g; wmax = 0;
         out.send(f);
     }
 

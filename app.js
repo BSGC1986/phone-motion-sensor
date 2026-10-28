@@ -48,7 +48,8 @@
      ===================================================================== */
   class Sensor {
     constructor(send) {
-      this.send = send; this.cfg = { thr: 2.5, gap: 200, air: .5 };
+      this.send = send; this.cfg = { thr: 2.5, gap: 200, air: .5, sw: 250 };
+      this.swg = null; this.swEnd = -1e9; this.wmax = 0;                  // swing detector state (see swing())
       this.rot = 0; this.wob = 0; this.b = 0; this.c = 0; this.g = 1; this.gmax = 0; this.gmin = 99;
       this.pend = null; this.rearm = true; this.lastHit = -1e9; this.airStart = 0; this.airN = 0;
       this.lastT = 0; this.lastFrame = performance.now(); this.got = false;
@@ -91,6 +92,37 @@
         const ms = now - this.airStart; if (this.airN >= 4 && ms >= 100) this.send({ t: 'air', ms: Math.round(ms) });
         this.airStart = 0;
       }
+      this.swing(now, dt);
+    }
+    /* A swing = the phone spinning faster than cfg.sw degrees/second, then settling again.
+       One summary message per swing: peak speed, when the peak happened (this phone's clock), how long it lasted,
+       how far it turned, how hard it accelerated, which way it twisted, and the shape of the speed curve. */
+    swing(now, dt) {
+      const c = this.cfg, r = this.rr, w = Math.hypot(r[0], r[1], r[2]), acc = Math.hypot(this.lx, this.ly, this.lz);
+      if (w > this.wmax) this.wmax = w;
+      let S = this.swg;
+      if (!S) {
+        if (w <= c.sw || now - this.swEnd < 250) return;
+        const gv = this.gv || { x: 0, y: 0, z: G }, m = Math.hypot(gv.x, gv.y, gv.z) || 1;
+        S = this.swg = { t0: now, pk: w, tPk: now, acc, ang: 0, ax: [0, 0, 0], tw: 0, twPk: 0, quiet: 0, sat: false, tr: [], g0: [gv.x / m, gv.y / m, gv.z / m], g1: null };
+      }
+      S.ang += w * dt;
+      S.ax[0] += r[1] * dt; S.ax[1] += r[2] * dt; S.ax[2] += r[0] * dt;      // turning about the phone's x (tip), y (long axis / twist) and z (steering wheel) axes
+      S.tw += r[2] * dt;
+      if (acc > S.acc) S.acc = acc;
+      if (w >= 1950) S.sat = true;                                            // gyros top out around 2000°/s — the real peak may be higher
+      if (w > S.pk) { S.pk = w; S.tPk = now; S.twPk = S.tw; const gv = this.gv || { x: 0, y: 0, z: G }, m = Math.hypot(gv.x, gv.y, gv.z) || 1; S.g1 = [gv.x / m, gv.y / m, gv.z / m]; }
+      if (S.tr.length < 200) S.tr.push(w);
+      S.quiet = w < c.sw * .5 ? S.quiet + dt * 1000 : 0;
+      if (S.quiet < 50 && now - S.t0 < 1600) return;
+      this.swg = null; this.swEnd = now;
+      const dur = now - S.t0;
+      if (S.pk < c.sw * 1.4 || dur < 70) return;                              // too small or too brief to be a swing
+      const am = Math.hypot(S.ax[0], S.ax[1], S.ax[2]) || 1, n = 16, tr = [];
+      for (let i = 0; i < n; i++) { let m = 0; for (let k = Math.floor(i * S.tr.length / n); k < Math.max(Math.floor((i + 1) * S.tr.length / n), Math.floor(i * S.tr.length / n) + 1) && k < S.tr.length; k++) m = Math.max(m, S.tr[k]); tr.push(Math.round(m / 10)); }
+      const q = v => +v.toFixed(2);
+      this.send({ t: 'swing', pk: Math.round(S.pk), at: Math.round(S.tPk), dur: Math.round(dur), tpk: Math.round(S.tPk - S.t0), ang: Math.round(S.ang), acc: +S.acc.toFixed(1),
+                  tw: Math.round(S.twPk), ax: S.ax.map(v => q(v / am)), g0: S.g0.map(q), g1: (S.g1 || S.g0).map(q), sat: S.sat, tr });
     }
     commit() { const p = this.pend; this.pend = null; this.send({ t: 'hit', g: +p.peak.toFixed(2) }); }
     tick() {
@@ -99,8 +131,8 @@
       if (now - this.lastFrame >= 50) {
         const f = { t: 'f', dt: Math.round(now - this.lastFrame), gx: +this.gmax.toFixed(2), gn: +Math.min(this.gmin, 9).toFixed(2), b: +this.b.toFixed(1), c: +this.c.toFixed(1), rot: +this.rot.toFixed(1), wob: +this.wob.toFixed(3), air: this.airN >= 3 && !!this.airStart, v: document.visibilityState === 'visible' ? 1 : 0,
           ax: +this.ax.toFixed(2), ay: +this.ay.toFixed(2), az: +this.az.toFixed(2), lx: +this.lx.toFixed(2), ly: +this.ly.toFixed(2), lz: +this.lz.toFixed(2),
-          ra: Math.round(this.rr[0]), rb: Math.round(this.rr[1]), rg: Math.round(this.rr[2]), al: Math.round(this.al) };
-        this.lastFrame = now; this.gmax = this.g; this.gmin = this.g;
+          ra: Math.round(this.rr[0]), rb: Math.round(this.rr[1]), rg: Math.round(this.rr[2]), al: Math.round(this.al), wm: Math.round(this.wmax) };
+        this.lastFrame = now; this.gmax = this.g; this.gmin = this.g; this.wmax = 0;
         this.send(f); $('pGauge').textContent = f.gx.toFixed(1);
       }
     }
@@ -211,7 +243,7 @@
     G, fmt, beep, clamp,
     elapsed(now) { return this.st === 'running' ? now - this.startAt : (this.st === 'finished' ? this.el : 0); },
     log(t, msg) { feed.unshift({ c: t.color, n: t.name, m: msg }); if (feed.length > 60) feed.pop(); renderFeed(); },
-    pushCfg(t) { t.send && t.send({ t: 'cfg', cfg: { thr: t.thr, gap: H.set.gap || 200, air: t.air == null ? .5 : t.air } }); },
+    pushCfg(t) { t.send && t.send({ t: 'cfg', cfg: { thr: t.thr, gap: H.set.gap || 200, air: t.air == null ? .5 : t.air, sw: t.sw == null ? 250 : t.sw } }); },
     pushAll() { H.teams.forEach(t => { t.lastPh = ''; }); },
     finish(timeUp) { finish(timeUp); }
   };
@@ -450,6 +482,8 @@
       if (t.card) { t.card.classList.add('flash'); setTimeout(() => t.card && t.card.classList.remove('flash'), 120); }
     } else if (m.t === 'air' && g) {
       g.onAir && g.onAir(t, m.ms, now);
+    } else if (m.t === 'swing' && g) {
+      g.onSwing && g.onSwing(t, m, now);
     }
   }
 
